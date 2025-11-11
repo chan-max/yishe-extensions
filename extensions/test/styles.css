@@ -1,0 +1,52 @@
+/* styles.css: 注入到网页中的样式 */
+
+/* 高亮标记的样式 */
+.highlight-mark {
+  background-color: #ffeb3b !important;
+  /* 背景色：亮黄色 */
+  color: #000 !important;
+  /* 文字颜色：黑色 */
+  padding: 2px 4px !important;
+  /* 内边距：上下2px，左右4px */
+  border-radius: 3px !important;
+  /* 圆角：3px */
+  font-weight: bold !important;
+  /* 字体加粗 */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+  /* 阴影效果 */
+  animation: highlight-pulse 0.3s ease-in-out !important;
+  /* 添加一个脉冲动画效果 */
+}
+
+/* 高亮动画效果 */
+@keyframes highlight-pulse {
+  0% {
+    transform: scale(1);
+    /* 初始大小 */
+  }
+  50% {
+    transform: scale(1.05);
+    /* 放大到1.05倍 */
+  }
+  100% {
+    transform: scale(1);
+    /* 恢复原始大小 */
+  }
+}
+
+/* 可选：添加一个闪烁效果来吸引注意力 */
+.highlight-mark.new {
+  animation: highlight-flash 0.5s ease-in-out !important;
+}
+
+@keyframes highlight-flash {
+  0%, 100% {
+    background-color: #ffeb3b;
+    /* 亮黄色 */
+  }
+  50% {
+    background-color: #ffc107;
+    /* 深黄色 */
+  }
+}
+

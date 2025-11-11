@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "页面高亮测试插件",
+  "version": "1.0.0",
+  "description": "一个简单的测试插件，可以在页面上高亮显示文本",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "页面高亮工具"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ]
+}
