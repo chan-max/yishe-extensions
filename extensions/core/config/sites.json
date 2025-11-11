@@ -1,0 +1,25 @@
+{
+  "sites": [
+    {
+      "id": "site1",
+      "name": "网站1",
+      "domains": ["example1.com", "www.example1.com"],
+      "enabled": true,
+      "module": "site1"
+    },
+    {
+      "id": "site2",
+      "name": "网站2",
+      "domains": ["example2.com", "www.example2.com"],
+      "enabled": true,
+      "module": "site2"
+    },
+    {
+      "id": "default",
+      "name": "通用功能",
+      "domains": ["<all_urls>"],
+      "enabled": true,
+      "module": "common"
+    }
+  ]
+}

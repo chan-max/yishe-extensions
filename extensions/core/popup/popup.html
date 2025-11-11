@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Core 工具集</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="popup-header">
+      <h1>🤖 Core 工具集</h1>
+      <p class="popup-subtitle">多功能 Chrome 插件</p>
+    </div>
+
+    <div class="popup-content">
+      <div class="info-section">
+        <h2>当前状态</h2>
+        <div id="currentSite" class="current-site">
+          <span class="loading">加载中...</span>
+        </div>
+      </div>
+
+      <div class="actions-section">
+        <h2>快捷操作</h2>
+        <div class="action-buttons">
+          <button id="refreshBtn" class="action-btn">
+            <span class="btn-icon">🔄</span>
+            <span class="btn-text">刷新页面</span>
+          </button>
+          <button id="settingsBtn" class="action-btn">
+            <span class="btn-icon">⚙️</span>
+            <span class="btn-text">设置</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="data-section">
+        <h2>数据统计</h2>
+        <div id="dataStats" class="data-stats">
+          <div class="stat-item">
+            <span class="stat-label">已爬取数据:</span>
+            <span id="dataCount" class="stat-value">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="popup-footer">
+      <p class="footer-text">点击页面上的机器人图标使用功能</p>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
+
