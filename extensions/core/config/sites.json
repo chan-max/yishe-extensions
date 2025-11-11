@@ -15,6 +15,20 @@
       "module": "site2"
     },
     {
+      "id": "baidu",
+      "name": "百度",
+      "domains": ["baidu.com", "www.baidu.com"],
+      "enabled": true,
+      "module": "baidu"
+    },
+    {
+      "id": "google",
+      "name": "Google",
+      "domains": ["google.com", "www.google.com"],
+      "enabled": true,
+      "module": "google"
+    },
+    {
       "id": "default",
       "name": "通用功能",
       "domains": ["<all_urls>"],

@@ -243,40 +243,74 @@ window.CoreFloatingRobot = {
       this.openMenu();
     });
 
-    // 拖拽功能
+    // 初始位置（右下角），改为使用 top/left，避免与 bottom/right 冲突
+    const setInitialPosition = () => {
+      // 先放到可见区域再计算尺寸
+      container.style.left = '0px';
+      container.style.top = '0px';
+      const targetLeft = Math.max(0, window.innerWidth - container.offsetWidth - 20);
+      const targetTop = Math.max(0, window.innerHeight - container.offsetHeight - 80);
+      container.style.left = targetLeft + 'px';
+      container.style.top = targetTop + 'px';
+    };
+    setTimeout(setInitialPosition, 0);
+
+    // 拖拽功能（Pointer Events + rAF 提升流畅度）
     let isDragging = false;
-    let currentX;
-    let currentY;
-    let initialX;
-    let initialY;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    let pendingAnimationFrame = null;
+    let nextLeft = 0;
+    let nextTop = 0;
 
-    this.robotElement.addEventListener('mousedown', (e) => {
-      if (e.target === this.robotElement || this.robotElement.contains(e.target)) {
-        isDragging = true;
-        initialX = e.clientX - container.offsetLeft;
-        initialY = e.clientY - container.offsetTop;
+    const updatePosition = () => {
+      pendingAnimationFrame = null;
+      // 限制在可视区域内
+      const maxX = window.innerWidth - container.offsetWidth;
+      const maxY = window.innerHeight - container.offsetHeight;
+      const clampedLeft = Math.max(0, Math.min(nextLeft, maxX));
+      const clampedTop = Math.max(0, Math.min(nextTop, maxY));
+      container.style.left = clampedLeft + 'px';
+      container.style.top = clampedTop + 'px';
+    };
+
+    this.robotElement.addEventListener('pointerdown', (e) => {
+      // 忽略非主键
+      if (e.button !== 0) return;
+      isDragging = true;
+      this.robotElement.setPointerCapture(e.pointerId);
+      const rect = container.getBoundingClientRect();
+      dragOffsetX = e.clientX - rect.left;
+      dragOffsetY = e.clientY - rect.top;
+    });
+
+    this.robotElement.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      nextLeft = e.clientX - dragOffsetX;
+      nextTop = e.clientY - dragOffsetY;
+      if (pendingAnimationFrame === null) {
+        pendingAnimationFrame = requestAnimationFrame(updatePosition);
       }
     });
 
-    document.addEventListener('mousemove', (e) => {
-      if (isDragging) {
-        e.preventDefault();
-        currentX = e.clientX - initialX;
-        currentY = e.clientY - initialY;
-
-        // 限制在可视区域内
-        const maxX = window.innerWidth - container.offsetWidth;
-        const maxY = window.innerHeight - container.offsetHeight;
-        currentX = Math.max(0, Math.min(currentX, maxX));
-        currentY = Math.max(0, Math.min(currentY, maxY));
-
-        container.style.left = currentX + 'px';
-        container.style.top = currentY + 'px';
-      }
-    });
-
-    document.addEventListener('mouseup', () => {
+    const endDrag = (e) => {
+      if (!isDragging) return;
       isDragging = false;
+      try {
+        this.robotElement.releasePointerCapture(e.pointerId);
+      } catch (_) {}
+    };
+    this.robotElement.addEventListener('pointerup', endDrag);
+    this.robotElement.addEventListener('pointercancel', endDrag);
+
+    // 窗口尺寸变化时，保持在可视区域内
+    window.addEventListener('resize', () => {
+      const rect = container.getBoundingClientRect();
+      nextLeft = rect.left;
+      nextTop = rect.top;
+      if (pendingAnimationFrame === null) {
+        pendingAnimationFrame = requestAnimationFrame(updatePosition);
+      }
     });
 
     console.log('[Core] 悬浮机器人已初始化');
