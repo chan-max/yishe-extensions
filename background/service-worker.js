@@ -3,7 +3,7 @@
 
 importScripts('../libs/socket.io.min.js');
 
-const USE_PRODUCTION_WS = false;
+const USE_PRODUCTION_WS = true;
 const PROD_WS_ENDPOINT = 'https://1s.design:1520/ws';
 const DEV_WS_ENDPOINT = 'http://localhost:1520/ws';
 const DEFAULT_WS_ENDPOINT = USE_PRODUCTION_WS ? PROD_WS_ENDPOINT : DEV_WS_ENDPOINT;

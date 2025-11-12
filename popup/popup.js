@@ -1,64 +1,20 @@
 // popup.js: 弹窗逻辑
 
-document.addEventListener('DOMContentLoaded', async () => {
+const QUICK_LINKS = [
+  { name: '设计管理后台', description: '团队内部管理', url: 'https://1s.design' },
+  { name: 'Yishe 官网', description: '产品与服务概览', url: 'https://www.yishe.net' },
+  { name: 'Google', description: '搜索引擎', url: 'https://www.google.com' },
+  { name: 'Bing', description: 'Microsoft 搜索', url: 'https://www.bing.com' },
+];
+
+document.addEventListener('DOMContentLoaded', () => {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-    if (tab && tab.url) {
-      try {
-        const url = new URL(tab.url);
-        const siteInfo = document.getElementById('currentSite');
-        if (siteInfo) {
-          siteInfo.innerHTML = `
-          <div class="site-info">
-            <span class="site-domain">${escapeHtml(url.hostname)}</span>
-            <span class="site-path">${escapeHtml(url.pathname)}</span>
-          </div>
-        `;
-        }
-      } catch (error) {
-        const siteInfo = document.getElementById('currentSite');
-        if (siteInfo) {
-          siteInfo.textContent = '无法解析 URL';
-        }
-      }
-    }
-
-    loadDataStats();
     setupWebsocketStatus();
-
-    const refreshBtn = document.getElementById('refreshBtn');
-    if (refreshBtn) {
-      refreshBtn.addEventListener('click', () => {
-        if (tab && tab.id) {
-          chrome.tabs.reload(tab.id);
-          window.close();
-        }
-      });
-    }
-
-    const settingsBtn = document.getElementById('settingsBtn');
-    if (settingsBtn) {
-      settingsBtn.addEventListener('click', () => {
-        chrome.runtime.openOptionsPage().catch(() => {
-          chrome.tabs.create({ url: 'chrome://extensions/?id=' + chrome.runtime.id });
-        });
-      });
-    }
+    setupQuickLinks();
   } catch (error) {
     console.error('[Core Popup] 初始化失败:', error);
   }
 });
-
-function loadDataStats() {
-  chrome.storage.local.get(['crawledData'], (result) => {
-    const data = result.crawledData || [];
-    const dataCountEl = document.getElementById('dataCount');
-    if (dataCountEl) {
-      dataCountEl.textContent = data.length;
-    }
-  });
-}
 
 function setupWebsocketStatus() {
   const container = document.getElementById('wsStatus');
@@ -87,6 +43,37 @@ function setupWebsocketStatus() {
     } else {
       render({ status: 'error', lastError: response?.error || '无法获取连接状态' });
     }
+  });
+}
+
+function setupQuickLinks() {
+  const listEl = document.getElementById('quickLinksList');
+  if (!listEl) return;
+
+  listEl.innerHTML = '';
+
+  QUICK_LINKS.forEach((link) => {
+    const item = document.createElement('li');
+    item.className = 'quick-link-item';
+
+    const button = document.createElement('button');
+    button.className = 'quick-link-button';
+    button.type = 'button';
+    button.dataset.url = link.url;
+    button.innerHTML = `
+      <span class="quick-link-name">${escapeHtml(link.name)}</span>
+      <span class="quick-link-desc">${escapeHtml(link.description)}</span>
+      <span class="quick-link-arrow">›</span>
+    `;
+
+    button.addEventListener('click', () => {
+      chrome.tabs.create({ url: link.url }, () => {
+        window.close();
+      });
+    });
+
+    item.appendChild(button);
+    listEl.appendChild(item);
   });
 }
 

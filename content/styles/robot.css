@@ -7,38 +7,39 @@
 }
 
 .core-floating-robot {
-  width: 56px;
-  height: 56px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 50%;
+  width: 52px;
+  height: 52px;
+  background: #ffffff;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 28px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   user-select: none;
-  border: 3px solid #fff;
+  border: 1px solid #d1d1d6;
 }
 
 .core-floating-robot:hover {
-  transform: scale(1.1);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  transform: scale(1.05);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
 }
 
 .core-floating-robot:active {
-  transform: scale(0.95);
+  transform: scale(0.96);
 }
 
 .core-robot-menu {
   position: absolute;
-  bottom: 70px; /* 依然相对容器底部，菜单跟随机器人 */
-  right: 0;     /* 贴合机器人右侧 */
+  bottom: 70px;
+  right: 0;
   background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  min-width: 240px;
+  border-radius: 18px;
+  border: 1px solid #e5e5ea;
+  box-shadow: 0 20px 40px rgba(28, 28, 30, 0.18);
+  min-width: 220px;
   max-width: 320px;
   max-height: 400px;
   overflow-y: auto;
@@ -58,38 +59,38 @@
 }
 
 .core-menu-item {
-  padding: 12px 16px;
+  padding: 12px 18px;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 12px;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s ease;
   font-size: 14px;
-  color: #333;
+  color: #1c1c1e;
 }
 
 .core-menu-item:hover:not(.disabled):not(.core-menu-header) {
-  background-color: #f5f5f5;
+  background-color: #f2f2f7;
 }
 
 .core-menu-item.disabled {
-  color: #999;
+  color: #aeaeb2;
   cursor: not-allowed;
 }
 
 .core-menu-item.core-menu-header {
   font-weight: 600;
-  color: #667eea;
+  color: #3a3a3c;
   cursor: default;
   font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .core-menu-divider {
   height: 1px;
-  background-color: #e0e0e0;
-  margin: 4px 0;
+  background-color: #e5e5ea;
+  margin: 6px 0;
 }
 
 .core-menu-icon {

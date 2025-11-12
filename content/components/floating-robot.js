@@ -10,8 +10,8 @@ window.CoreFloatingRobot = {
   // 创建机器人图标
   createRobotIcon() {
     const robot = window.CoreDOMUtils.createElement('div', 'core-floating-robot');
-    robot.innerHTML = '🤖';
-    robot.setAttribute('title', 'Core 工具集');
+    robot.innerHTML = '🤡';
+    robot.setAttribute('title', 'Clown 工具助手');
     return robot;
   },
 
