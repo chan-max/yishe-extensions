@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Core 多功能工具集",
+  "name": "YiShe 多功能工具集",
   "version": "1.0.0",
   "description": "一个模块化的多功能 Chrome 插件，支持不同网站的不同功能",
   "permissions": [
@@ -15,7 +15,7 @@
   ],
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "Core 工具集"
+    "default_title": "YiShe 工具集"
   },
   "background": {
     "service_worker": "background/service-worker.js"
