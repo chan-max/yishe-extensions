@@ -7,28 +7,8 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="popup-container">
-    <header class="popup-header">
-      <div class="header-title">WebSocket 状态</div>
-      <div class="header-subtitle">浏览器插件实时连接</div>
-    </header>
-
-    <main class="popup-content">
-      <section id="wsStatus" class="ws-status-card">
-        <span class="loading">状态加载中...</span>
-      </section>
-
-      <section class="quick-links-card">
-        <div class="section-header">
-          <div class="section-title">快速跳转</div>
-          <div class="section-subtitle">常用站点一键打开</div>
-        </div>
-        <ul id="quickLinksList" class="quick-links-list"></ul>
-      </section>
-    </main>
-  </div>
-
+  <div id="app"></div>
+  <script src="../libs/vue.global.prod.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
-
