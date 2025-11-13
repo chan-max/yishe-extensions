@@ -3,12 +3,53 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebSocket 状态</title>
+  <title>YiShe 助手</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div id="app"></div>
-  <script src="../libs/vue.global.prod.js"></script>
+  <div class="popup-container">
+    <header class="popup-header">
+      <div class="header-title">WebSocket 状态</div>
+      <div class="header-subtitle">浏览器插件实时连接</div>
+    </header>
+
+    <main class="popup-content">
+      <section class="ws-status-card">
+        <div id="loading" class="loading">状态加载中...</div>
+        <div id="ws-status-content" style="display: none;">
+          <div class="ws-status-header">
+            <div class="ws-status-indicator">
+              <span id="status-dot" class="status-dot disconnected"></span>
+              <span id="ws-status-label" class="ws-status-label">已断开</span>
+            </div>
+            <button id="reconnect-btn" class="ws-reconnect-btn" disabled>
+              重新连接
+            </button>
+          </div>
+          <div id="ws-status-endpoint" class="ws-status-endpoint" title="未配置">
+            未配置
+          </div>
+          <div id="ws-status-meta" class="ws-status-meta" style="display: none;">
+            <span id="ping-time"></span>
+            <span id="pong-time"></span>
+            <span id="latency"></span>
+          </div>
+          <div id="ws-status-error" class="ws-status-error" style="display: none;">
+            错误：<span id="error-text"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="quick-links-card">
+        <div class="section-header">
+          <div class="section-title">快速跳转</div>
+        </div>
+        <ul class="quick-links-list" id="quick-links-list">
+          <!-- 快速链接将通过 JS 动态生成 -->
+        </ul>
+      </section>
+    </main>
+  </div>
   <script src="popup.js"></script>
 </body>
 </html>
