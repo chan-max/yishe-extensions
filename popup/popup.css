@@ -231,3 +231,104 @@ body {
   color: #c7c7cc;
   margin-left: 8px;
 }
+
+.admin-messages-card {
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  max-height: 300px;
+  overflow: hidden;
+}
+
+.admin-messages-card .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 2px;
+}
+
+.clear-messages-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clear-messages-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.admin-messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.admin-messages-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.admin-messages-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-messages-list::-webkit-scrollbar-thumb {
+  background: #c7c7cc;
+  border-radius: 2px;
+}
+
+.admin-messages-list::-webkit-scrollbar-thumb:hover {
+  background: #a8a8ad;
+}
+
+.admin-message-item {
+  background: #f9f9fb;
+  border: 1px solid #e5e5ea;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.admin-message-time {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.admin-message-content {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+}
+
+.admin-messages-empty {
+  text-align: center;
+  padding: 20px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}

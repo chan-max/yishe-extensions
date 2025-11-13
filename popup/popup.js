@@ -41,6 +41,9 @@ const elements = {
   wsStatusError: document.getElementById('ws-status-error'),
   errorText: document.getElementById('error-text'),
   quickLinksList: document.getElementById('quick-links-list'),
+  adminMessagesList: document.getElementById('admin-messages-list'),
+  adminMessagesEmpty: document.getElementById('admin-messages-empty'),
+  clearMessagesBtn: document.getElementById('clear-messages-btn'),
 };
 
 // 格式化时间戳
@@ -173,22 +176,155 @@ function initQuickLinks() {
   });
 }
 
-// 监听 WebSocket 状态更新
-function setupMessageListener() {
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message && message.type === 'wsStatus:update') {
-      Object.assign(wsState, message.payload);
-      updateUI();
+// 格式化消息内容
+function formatMessageData(data) {
+  if (typeof data === 'string') {
+    return data;
+  }
+  if (data && typeof data === 'object') {
+    if (data.message) return data.message;
+    if (data.text) return data.text;
+    try {
+      return JSON.stringify(data, null, 2);
+    } catch {
+      return String(data);
+    }
+  }
+  return String(data);
+}
+
+// 加载并显示管理员消息
+function loadAdminMessages() {
+  console.log('[popup] loadAdminMessages: 开始加载消息');
+  chrome.storage.local.get(['adminMessages'], (result) => {
+    console.log('[popup] loadAdminMessages: 从 storage 读取结果:', result);
+    const messages = result.adminMessages || [];
+    console.log('[popup] loadAdminMessages: 消息数量:', messages.length);
+    if (messages.length > 0) {
+      console.log('[popup] loadAdminMessages: 第一条消息:', messages[0]);
+    }
+    renderAdminMessages(messages);
+  });
+}
+
+// 渲染管理员消息
+function renderAdminMessages(messages) {
+  console.log('[popup] renderAdminMessages: 开始渲染，消息数量:', messages.length);
+  
+  if (!elements.adminMessagesList || !elements.adminMessagesEmpty) {
+    console.error('[popup] renderAdminMessages: DOM 元素不存在');
+    return;
+  }
+  
+  if (messages.length === 0) {
+    console.log('[popup] renderAdminMessages: 无消息，显示空状态');
+    elements.adminMessagesList.style.display = 'none';
+    elements.adminMessagesEmpty.style.display = 'block';
+    return;
+  }
+
+  console.log('[popup] renderAdminMessages: 有消息，开始渲染');
+  elements.adminMessagesList.style.display = 'block';
+  elements.adminMessagesEmpty.style.display = 'none';
+
+  const messagesToRender = messages.slice(0, 10);
+  console.log('[popup] renderAdminMessages: 将渲染的消息数量:', messagesToRender.length);
+  
+  const html = messagesToRender.map((msg, index) => {
+    console.log(`[popup] renderAdminMessages: 处理消息 ${index}:`, msg);
+    const date = new Date(msg.timestamp);
+    const timeStr = date.toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const messageText = formatMessageData(msg.data);
+    console.log(`[popup] renderAdminMessages: 消息 ${index} 格式化后:`, messageText);
+    
+    return `
+      <div class="admin-message-item">
+        <div class="admin-message-header">
+          <span class="admin-message-time">${timeStr}</span>
+        </div>
+        <div class="admin-message-content">${escapeHtml(messageText)}</div>
+      </div>
+    `;
+  }).join('');
+  
+  console.log('[popup] renderAdminMessages: 生成的 HTML 长度:', html.length);
+  elements.adminMessagesList.innerHTML = html;
+  console.log('[popup] renderAdminMessages: 渲染完成');
+}
+
+// HTML 转义
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// 清空消息
+function clearAdminMessages() {
+  chrome.storage.local.set({ adminMessages: [] }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('清空消息失败:', chrome.runtime.lastError);
+    } else {
+      loadAdminMessages();
     }
   });
 }
 
+// 监听 WebSocket 状态更新和管理员消息
+function setupMessageListener() {
+  console.log('[popup] setupMessageListener: 设置消息监听器');
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('[popup] onMessage: 收到消息:', message);
+    console.log('[popup] onMessage: 消息类型:', message?.type);
+    
+    if (message && message.type === 'wsStatus:update') {
+      console.log('[popup] onMessage: 处理 wsStatus:update');
+      Object.assign(wsState, message.payload);
+      updateUI();
+    } else if (message && message.type === 'adminMessage:received') {
+      console.log('[popup] onMessage: 收到 adminMessage:received 通知');
+      console.log('[popup] onMessage: 消息载荷:', message.payload);
+      // 收到新消息，重新加载消息列表
+      loadAdminMessages();
+      sendResponse({ success: true });
+    } else {
+      console.log('[popup] onMessage: 未知消息类型，忽略');
+    }
+    
+    return true; // 保持消息通道开放
+  });
+  console.log('[popup] setupMessageListener: 消息监听器设置完成');
+}
+
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('[popup] DOMContentLoaded: 开始初始化');
+  console.log('[popup] DOMContentLoaded: 检查 DOM 元素:', {
+    adminMessagesList: !!elements.adminMessagesList,
+    adminMessagesEmpty: !!elements.adminMessagesEmpty,
+    clearMessagesBtn: !!elements.clearMessagesBtn,
+  });
+  
   initQuickLinks();
   setupMessageListener();
   fetchWsStatus();
+  loadAdminMessages();
   
   // 绑定重新连接按钮
-  elements.reconnectBtn.addEventListener('click', handleReconnect);
+  if (elements.reconnectBtn) {
+    elements.reconnectBtn.addEventListener('click', handleReconnect);
+  }
+  
+  // 绑定清空消息按钮
+  if (elements.clearMessagesBtn) {
+    elements.clearMessagesBtn.addEventListener('click', clearAdminMessages);
+  }
+  
+  console.log('[popup] DOMContentLoaded: 初始化完成');
 });

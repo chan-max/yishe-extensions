@@ -3,7 +3,7 @@
 
 importScripts('../libs/socket.io.min.js');
 
-const USE_PRODUCTION_WS = true;
+const USE_PRODUCTION_WS = false;
 const PROD_WS_ENDPOINT = 'https://1s.design:1520/ws';
 const DEV_WS_ENDPOINT = 'http://localhost:1520/ws';
 const DEFAULT_WS_ENDPOINT = USE_PRODUCTION_WS ? PROD_WS_ENDPOINT : DEV_WS_ENDPOINT;
@@ -596,6 +596,123 @@ async function initWebsocket() {
       lastPayload: payload || null,
     });
   });
+
+  // 监听来自管理系统的消息
+  socket.on('admin-message', (data) => {
+    log('[admin-message] 收到管理员消息事件');
+    log('[admin-message] 消息数据:', data);
+    log('[admin-message] 消息数据类型:', typeof data);
+    log('[admin-message] 消息数据是否为对象:', typeof data === 'object');
+    if (typeof data === 'object' && data !== null) {
+      log('[admin-message] 消息数据键:', Object.keys(data));
+    }
+    handleAdminMessage(data);
+  });
+
+  // 监听所有其他消息事件（用于调试）
+  socket.onAny((event, ...args) => {
+    log(`[onAny] 收到事件: ${event}`, args);
+    if (event === 'admin-message') {
+      log('[onAny] admin-message 事件数据:', args);
+    }
+  });
+}
+
+function handleAdminMessage(data) {
+  log('[handleAdminMessage] 开始处理管理员消息');
+  log('[handleAdminMessage] 输入数据:', data);
+  
+  try {
+    const messageData = {
+      timestamp: new Date().toISOString(),
+      data: data,
+    };
+    
+    log('[handleAdminMessage] 构建的消息数据:', messageData);
+    log('[handleAdminMessage] 时间戳:', messageData.timestamp);
+
+    // 存储消息到 storage
+    log('[handleAdminMessage] 开始读取现有消息...');
+    chrome.storage.local.get(['adminMessages'], (result) => {
+      log('[handleAdminMessage] 读取到的现有消息:', result);
+      const messages = result.adminMessages || [];
+      log('[handleAdminMessage] 现有消息数量:', messages.length);
+      
+      messages.unshift(messageData);
+      log('[handleAdminMessage] 添加新消息后数量:', messages.length);
+      
+      // 只保留最近 50 条消息
+      if (messages.length > 50) {
+        messages.length = 50;
+        log('[handleAdminMessage] 截断后消息数量:', messages.length);
+      }
+      
+      log('[handleAdminMessage] 准备存储消息，数量:', messages.length);
+      chrome.storage.local.set({ adminMessages: messages }, () => {
+        if (chrome.runtime.lastError) {
+          log('[handleAdminMessage] 存储管理员消息失败:', chrome.runtime.lastError.message);
+        } else {
+          log('[handleAdminMessage] 消息存储成功');
+          // 验证存储
+          chrome.storage.local.get(['adminMessages'], (verifyResult) => {
+            log('[handleAdminMessage] 验证存储结果，消息数量:', verifyResult.adminMessages?.length || 0);
+          });
+        }
+      });
+    });
+
+    // 发送通知给 popup 或其他监听者
+    log('[handleAdminMessage] 准备发送消息通知给 popup...');
+    chrome.runtime.sendMessage(
+      {
+        type: 'adminMessage:received',
+        payload: messageData,
+      },
+      (response) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          if (err.message.includes('Receiving end does not exist.')) {
+            log('[handleAdminMessage] Popup 未打开，消息已存储，将在下次打开时显示');
+          } else {
+            log('[handleAdminMessage] 广播管理员消息失败:', err.message);
+          }
+        } else {
+          log('[handleAdminMessage] 消息通知发送成功，响应:', response);
+        }
+      }
+    );
+
+    // 显示浏览器通知（如果用户允许）
+    if (chrome.notifications) {
+      log('[handleAdminMessage] 准备创建浏览器通知...');
+      const notificationId = `admin-message-${Date.now()}`;
+      const messageText = typeof data === 'string' 
+        ? data 
+        : (data?.message || data?.text || JSON.stringify(data));
+      
+      log('[handleAdminMessage] 通知内容:', messageText);
+      
+      chrome.notifications.create(notificationId, {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon48.png') || '',
+        title: '管理员消息',
+        message: messageText.length > 100 ? messageText.substring(0, 100) + '...' : messageText,
+      }, (createdId) => {
+        if (chrome.runtime.lastError) {
+          log('[handleAdminMessage] 创建通知失败:', chrome.runtime.lastError.message);
+        } else {
+          log('[handleAdminMessage] 通知创建成功，ID:', createdId);
+        }
+      });
+    } else {
+      log('[handleAdminMessage] chrome.notifications 不可用');
+    }
+    
+    log('[handleAdminMessage] 处理完成');
+  } catch (error) {
+    log('[handleAdminMessage] 处理管理员消息失败:', serializeError(error));
+    log('[handleAdminMessage] 错误堆栈:', error?.stack);
+  }
 }
 
 async function ensureEndpoint() {
