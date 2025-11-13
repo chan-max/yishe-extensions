@@ -22,38 +22,9 @@
     }
   }
 
-  // 加载对应网站的功能模块
-  async function loadSiteModule() {
-    try {
-      if (!window.CoreSiteDetector) {
-        console.error('[Core] 网站检测工具未加载');
-        // 即使检测工具未加载，也尝试加载通用模块
-        loadModule('common');
-        return;
-      }
-
-      const siteInfo = await window.CoreSiteDetector.detectSite();
-
-      if (!siteInfo) {
-        console.log('[Core] 未匹配到网站配置，使用通用功能');
-        loadModule('common');
-        return;
-      }
-
-      console.log(`[Core] 检测到网站: ${siteInfo.name} (${siteInfo.id})`);
-
-      // 加载通用模块（所有网站都加载）
-      loadModule('common');
-
-      // 加载特定网站模块
-      if (siteInfo.module && siteInfo.module !== 'common') {
-        loadModule(siteInfo.module, true); // true 表示是网站特定模块，放在文件夹中
-      }
-    } catch (error) {
-      console.error('[Core] 加载网站模块失败:', error);
-      // 出错时也加载通用模块
-      loadModule('common');
-    }
+  // 加载基础功能模块
+  function loadSiteModule() {
+    loadModule('common');
   }
 
   // 加载模块（避免重复加载）
@@ -88,25 +59,14 @@
       setTimeout(() => {
         if (window.CoreSiteModules && window.CoreSiteModules[moduleName]) {
           const module = window.CoreSiteModules[moduleName];
-          // 获取当前网站信息并初始化
           if (module.init && typeof module.init === 'function') {
-            window.CoreSiteDetector.detectSite().then(siteInfo => {
-              if (siteInfo) {
-                try {
-                  module.init(siteInfo);
-                  console.log(`[Core] 已初始化 ${moduleName} 模块`);
-                } catch (error) {
-                  console.error(`[Core] 初始化 ${moduleName} 模块失败:`, error);
-                }
-              }
-            }).catch(() => {
-              // 即使检测失败，也尝试初始化
-              try {
-                module.init({});
-              } catch (error) {
-                console.error(`[Core] 初始化 ${moduleName} 模块失败:`, error);
-              }
-            });
+            try {
+              const siteInfo = window.CoreSiteDetector?.getCurrentSiteInfo?.() || {};
+              module.init(siteInfo);
+              console.log(`[Core] 已初始化 ${moduleName} 模块`);
+            } catch (error) {
+              console.error(`[Core] 初始化 ${moduleName} 模块失败:`, error);
+            }
           }
         }
         window[loadingKey] = false;

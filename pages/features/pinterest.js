@@ -90,7 +90,7 @@
 
   async function scrapePinterest(context, params) {
     const targetUrl = params?.targetUrl?.trim() || DEFAULT_URL;
-    const maxCount = params?.count && Number.isFinite(params.count) ? params.count : 50;
+    const maxCount = params?.count && Number.isFinite(params.count) ? params.count : 10;
 
     context.notify('正在打开目标页面…', { tone: 'info' });
     const tab = await createTabAndWait(targetUrl);

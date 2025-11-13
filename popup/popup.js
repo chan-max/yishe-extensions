@@ -1,11 +1,3 @@
-// 快速链接配置
-const QUICK_LINKS = [
-  { name: '设计管理后台', url: 'https://1s.design' },
-  { name: 'Yishe 官网', url: 'https://www.yishe.net' },
-  { name: 'Google', url: 'https://www.google.com' },
-  { name: 'Bing', url: 'https://www.bing.com' },
-];
-
 // WebSocket 状态
 const wsState = {
   status: 'disconnected',
@@ -40,7 +32,6 @@ const elements = {
   latency: document.getElementById('latency'),
   wsStatusError: document.getElementById('ws-status-error'),
   errorText: document.getElementById('error-text'),
-  quickLinksList: document.getElementById('quick-links-list'),
   adminMessagesList: document.getElementById('admin-messages-list'),
   adminMessagesEmpty: document.getElementById('admin-messages-empty'),
   clearMessagesBtn: document.getElementById('clear-messages-btn'),
@@ -145,35 +136,6 @@ function handleReconnect() {
       // 重新获取状态
       setTimeout(fetchWsStatus, 500);
     }
-  });
-}
-
-// 打开链接
-function openLink(url) {
-  chrome.tabs.create({ url }, () => {
-    window.close();
-  });
-}
-
-// 初始化快速链接
-function initQuickLinks() {
-  elements.quickLinksList.innerHTML = QUICK_LINKS.map(link => `
-    <li class="quick-link-item">
-      <button class="quick-link-button" data-url="${link.url}">
-        <span class="quick-link-name">${link.name}</span>
-        <span class="quick-link-arrow">›</span>
-      </button>
-    </li>
-  `).join('');
-  
-  // 绑定点击事件
-  elements.quickLinksList.querySelectorAll('.quick-link-button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const url = btn.getAttribute('data-url');
-      if (url) {
-        openLink(url);
-      }
-    });
   });
 }
 
@@ -312,10 +274,6 @@ document.addEventListener('DOMContentLoaded', () => {
     clearMessagesBtn: !!elements.clearMessagesBtn,
   });
   
-  // 仅当存在快捷链接容器时才初始化
-  if (elements.quickLinksList) {
-    initQuickLinks();
-  }
   setupMessageListener();
   fetchWsStatus();
 

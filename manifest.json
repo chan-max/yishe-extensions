@@ -39,7 +39,6 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "config/sites.json",
         "content/sites/common.js",
         "content/sites/*/index.js"
       ],

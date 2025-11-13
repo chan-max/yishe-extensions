@@ -1,14 +1,12 @@
 # Core 多功能工具集
 
-一个模块化的多功能 Chrome 插件，支持不同网站的不同功能，带有悬浮机器人 UI。
+一个多功能 Chrome 插件，聚焦通用工具面板与悬浮机器人 UI。
 
 ## 功能特点
 
-- 🤖 **悬浮机器人**: 页面右下角显示悬浮机器人图标，点击显示功能菜单
-- 🔌 **模块化设计**: 不同网站对应不同的功能模块，代码清晰易维护
-- 🎯 **智能识别**: 自动检测当前网站，加载对应的功能模块
+- 🤖 **悬浮机器人**: 页面右下角显示悬浮面板入口
 - 🎨 **美观 UI**: 现代化的界面设计，流畅的动画效果
-- 📦 **易于扩展**: 添加新网站功能只需创建新模块文件
+- 🧰 **通用工具**: 提供页面信息、快捷操作等常用能力
 - 🖱️ **可拖拽**: 机器人图标可以拖拽到任意位置
 
 ## 目录结构
@@ -16,8 +14,6 @@
 ```
 core/
 ├── manifest.json                 # 插件配置文件
-├── config/
-│   └── sites.json               # 网站配置（定义哪些网站对应哪些模块）
 ├── content/
 │   ├── content-base.js          # 基础 content script
 │   ├── components/
@@ -32,7 +28,7 @@ core/
 │   │   └── robot.css            # 机器人样式
 │   └── utils/                   # 工具函数
 │       ├── dom-utils.js         # DOM 操作工具
-│       └── site-detector.js     # 网站检测工具
+│       └── site-detector.js     # 页面信息采集工具
 ├── background/
 │   └── service-worker.js        # 后台服务 Worker
 ├── popup/
@@ -44,7 +40,7 @@ core/
 
 ## 目录组织说明
 
-- **通用功能**: 放在 `content/sites/common.js`，所有网站都会加载
+- **通用功能**: 放在 `content/sites/common.js`
 - **网站特定功能**: 放在 `content/sites/{模块名}/index.js`，只有匹配的网站才会加载
 - **模块文件夹**: 每个网站的功能放在独立的文件夹中，便于组织和管理多个文件
 
@@ -61,105 +57,9 @@ core/
 1. **打开任意网页**
 2. **查看悬浮机器人**: 页面右下角会显示一个机器人图标 🤖
 3. **点击机器人**: 点击机器人图标，会显示功能菜单
-4. **选择功能**: 菜单中会显示当前网站对应的功能
+4. **选择功能**: 菜单中会显示常用工具
 5. **使用功能**: 点击菜单项执行相应功能
 6. **拖拽机器人**: 可以拖拽机器人图标到任意位置
-
-## 添加新网站功能
-
-### 步骤1: 添加网站配置
-
-编辑 `config/sites.json`:
-
-```json
-{
-  "sites": [
-    {
-      "id": "newsite",
-      "name": "新网站",
-      "domains": ["newsite.com", "www.newsite.com"],
-      "enabled": true,
-      "module": "newsite"
-    }
-  ]
-}
-```
-
-### 步骤2: 创建功能模块文件夹和文件
-
-创建文件夹 `content/sites/newsite/` 和文件 `content/sites/newsite/index.js`:
-
-```javascript
-// content/sites/newsite/index.js: 新网站的功能模块
-
-// 创建全局网站模块对象
-if (!window.CoreSiteModules) {
-  window.CoreSiteModules = {};
-}
-
-window.CoreSiteModules.newsite = {
-  // 初始化函数
-  init(siteInfo) {
-    console.log('新网站功能模块已加载', siteInfo);
-    // 在这里添加网站特定的功能
-  },
-
-  // 获取菜单项
-  async getMenuItems(siteInfo) {
-    return [
-      {
-        icon: '🎯',
-        label: '我的功能',
-        action: () => {
-          // 执行功能
-          console.log('执行我的功能');
-          window.CoreDOMUtils.showNotification('功能执行成功', 'success');
-        }
-      }
-    ];
-  }
-};
-```
-
-### 步骤3: 重新加载插件
-
-在 `chrome://extensions/` 页面点击刷新按钮，新功能即可使用。
-
-## 多文件组织
-
-如果一个网站的功能比较复杂，可以在模块文件夹中创建多个文件：
-
-```
-content/sites/newsite/
-├── index.js          # 主模块文件（必需）
-├── utils.js          # 工具函数
-├── crawler.js        # 爬虫功能
-└── styles.css        # 样式文件
-```
-
-然后在 `index.js` 中引入其他文件：
-
-```javascript
-// index.js
-// 可以通过动态加载或其他方式引入其他文件
-```
-
-## 配置说明
-
-### sites.json 配置项
-
-- `id`: 网站唯一标识符
-- `name`: 网站显示名称
-- `domains`: 匹配的域名列表（支持多个域名）
-- `enabled`: 是否启用
-- `module`: 对应的功能模块名称（对应文件夹名）
-
-### 功能模块接口
-
-每个网站功能模块需要实现两个函数：
-
-1. `init(siteInfo)`: 初始化函数，在页面加载时调用
-2. `getMenuItems(siteInfo)`: 返回菜单项数组，用于显示在机器人菜单中
 
 ## 菜单项格式
 

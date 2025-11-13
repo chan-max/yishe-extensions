@@ -29,40 +29,30 @@ window.CoreFloatingRobot = {
     // 清空现有菜单项
     this.menuElement.innerHTML = '';
 
-    // 获取当前网站信息
-    try {
-      this.currentSiteInfo = await window.CoreSiteDetector.detectSite();
-    } catch (error) {
-      console.error('[Core] 检测网站失败:', error);
-      this.currentSiteInfo = null;
-    }
-
-    if (!this.currentSiteInfo) {
-      const noSiteItem = window.CoreDOMUtils.createElement('div', 'core-menu-item core-menu-header');
-      noSiteItem.textContent = '未匹配到网站';
-      this.menuElement.appendChild(noSiteItem);
-      this.addCommonMenuItems();
-      return;
-    }
-
-    // 添加网站信息标题
     const header = window.CoreDOMUtils.createElement('div', 'core-menu-item core-menu-header');
-    header.textContent = `当前网站: ${this.currentSiteInfo.name}`;
+    header.textContent = 'YiShe 常用工具';
     this.menuElement.appendChild(header);
 
-    // 添加分隔线
-    const divider = window.CoreDOMUtils.createElement('div', 'core-menu-divider');
-    this.menuElement.appendChild(divider);
-
-    // 加载对应网站的功能菜单
     try {
-      await this.loadSiteModuleMenu(this.currentSiteInfo);
+      const commonModule = window.CoreSiteModules?.common;
+      if (commonModule?.getMenuItems) {
+        const items = await commonModule.getMenuItems(window.CoreSiteDetector?.getCurrentSiteInfo?.() || {});
+        if (Array.isArray(items) && items.length > 0) {
+          items.forEach((item) => {
+            const menuItem = this.createMenuItem(item);
+            this.menuElement.appendChild(menuItem);
+          });
+        } else {
+          this.addDefaultMenuItems();
+        }
+      } else {
+        this.addDefaultMenuItems();
+      }
     } catch (error) {
-      console.error('[Core] 加载菜单项失败:', error);
+      console.error('[Core] 加载通用菜单失败:', error);
       this.addDefaultMenuItems();
     }
 
-    // 添加通用功能
     this.addCommonMenuItems();
   },
 
