@@ -7,6 +7,8 @@ const USE_PRODUCTION_WS = false;
 const PROD_WS_ENDPOINT = 'https://1s.design:1520/ws';
 const DEV_WS_ENDPOINT = 'http://localhost:1520/ws';
 const DEFAULT_WS_ENDPOINT = USE_PRODUCTION_WS ? PROD_WS_ENDPOINT : DEV_WS_ENDPOINT;
+const STORAGE_ENDPOINT_KEY = 'wsEndpoint';
+const STORAGE_ENDPOINT_CUSTOM_KEY = 'wsEndpointCustom';
 const HEARTBEAT_INTERVAL = 15000;
 const HEARTBEAT_TIMEOUT = 10000;
 
@@ -716,17 +718,65 @@ function handleAdminMessage(data) {
 }
 
 async function ensureEndpoint() {
-  const result = await new Promise((resolve) => {
-    chrome.storage.local.get(['wsEndpoint'], (data) => {
-      if (chrome.runtime.lastError) {
-        log('读取 wsEndpoint 失败:', chrome.runtime.lastError.message);
-      }
-      resolve(data || {});
-    });
-  });
+  try {
+    const result = await storageGet([STORAGE_ENDPOINT_KEY, STORAGE_ENDPOINT_CUSTOM_KEY]);
+    const storedEndpoint = result[STORAGE_ENDPOINT_KEY];
+    const isCustom = Boolean(result[STORAGE_ENDPOINT_CUSTOM_KEY]);
 
-  wsEndpoint = result.wsEndpoint || DEFAULT_WS_ENDPOINT;
+    if (isCustom && storedEndpoint) {
+      wsEndpoint = storedEndpoint;
+      log('使用自定义 WebSocket 端点:', wsEndpoint);
+    } else {
+      wsEndpoint = DEFAULT_WS_ENDPOINT;
+      log('使用默认 WebSocket 端点:', wsEndpoint);
+      await storageSet({
+        [STORAGE_ENDPOINT_KEY]: DEFAULT_WS_ENDPOINT,
+        [STORAGE_ENDPOINT_CUSTOM_KEY]: false,
+      }).catch((error) => {
+        log('写入默认端点失败（可忽略）:', serializeError(error));
+      });
+    }
+  } catch (error) {
+    log('确保端点时出错，使用默认端点:', serializeError(error));
+    wsEndpoint = DEFAULT_WS_ENDPOINT;
+    storageSet({
+      [STORAGE_ENDPOINT_KEY]: DEFAULT_WS_ENDPOINT,
+      [STORAGE_ENDPOINT_CUSTOM_KEY]: false,
+    }).catch((err) => {
+      log('写入默认端点失败（可忽略）:', serializeError(err));
+    });
+  }
+
   updateWsState({ endpoint: wsEndpoint });
+}
+
+function setEndpoint(newEndpoint, callback) {
+  const normalized = typeof newEndpoint === 'string' ? newEndpoint.trim() : '';
+  const effectiveEndpoint = normalized || DEFAULT_WS_ENDPOINT;
+  const isCustom = Boolean(normalized) && effectiveEndpoint !== DEFAULT_WS_ENDPOINT;
+
+  storageSet({
+    [STORAGE_ENDPOINT_KEY]: effectiveEndpoint,
+    [STORAGE_ENDPOINT_CUSTOM_KEY]: isCustom,
+  })
+    .then(() => {
+      wsEndpoint = effectiveEndpoint;
+      updateWsState({ endpoint: wsEndpoint });
+      log('WebSocket 端点已更新为:', wsEndpoint, '(custom:', isCustom, ')');
+      if (socket) {
+        log('端点变更，重新初始化连接');
+        initWebsocket();
+      }
+      if (typeof callback === 'function') {
+        callback(null);
+      }
+    })
+    .catch((error) => {
+      log('设置端点失败:', serializeError(error));
+      if (typeof callback === 'function') {
+        callback(error);
+      }
+    });
 }
 
 async function initialize() {
@@ -742,9 +792,12 @@ async function initialize() {
 
 chrome.runtime.onInstalled.addListener(() => {
   log('插件已安装');
-  chrome.storage.local.get(['wsEndpoint'], (result) => {
-    if (!result.wsEndpoint) {
-      chrome.storage.local.set({ wsEndpoint: DEFAULT_WS_ENDPOINT });
+  chrome.storage.local.get([STORAGE_ENDPOINT_KEY, STORAGE_ENDPOINT_CUSTOM_KEY], (result) => {
+    if (!result[STORAGE_ENDPOINT_KEY]) {
+      chrome.storage.local.set({
+        [STORAGE_ENDPOINT_KEY]: DEFAULT_WS_ENDPOINT,
+        [STORAGE_ENDPOINT_CUSTOM_KEY]: false,
+      });
     }
   });
 });
