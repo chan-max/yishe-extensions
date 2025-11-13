@@ -10,6 +10,8 @@
   const CONTENT_SCRIPT_TIMEOUT = 60000;
   const PIN_READY_TIMEOUT = 15000;
   const PIN_READY_POLL_INTERVAL = 600;
+  const DEFAULT_MAX_COUNT = 10;
+  const DEFAULT_SOURCE = 'pinterest';
 
   async function createTabAndWait(url, timeoutMs = 45000) {
     if (!chrome?.tabs?.create) {
@@ -90,7 +92,7 @@
 
   async function scrapePinterest(context, params) {
     const targetUrl = params?.targetUrl?.trim() || DEFAULT_URL;
-    const maxCount = params?.count && Number.isFinite(params.count) ? params.count : 10;
+    const maxCount = params?.count && Number.isFinite(params.count) ? params.count : DEFAULT_MAX_COUNT;
 
     context.notify('正在打开目标页面…', { tone: 'info' });
     const tab = await createTabAndWait(targetUrl);
@@ -157,8 +159,38 @@
         type: 'number',
         min: 1,
         max: 500,
-        defaultValue: 50,
-        tooltip: '达到上限或连续多次无新增图片时会自动停止滚动。',
+        defaultValue: DEFAULT_MAX_COUNT,
+        tooltip: `达到上限或连续多次无新增图片时会自动停止滚动（默认 ${DEFAULT_MAX_COUNT}）。`,
+      },
+      {
+        key: 'uploadToCos',
+        label: '上传至 COS 并入库',
+        type: 'checkbox',
+        defaultValue: true,
+        tooltip: '勾选后会将采集到的图片上传到腾讯云 COS，并同步写入服务器素材库。',
+      },
+      {
+        key: 'sourceTag',
+        label: '素材来源标记',
+        type: 'text',
+        placeholder: DEFAULT_SOURCE,
+        defaultValue: DEFAULT_SOURCE,
+        tooltip: '用于服务器入库的 source 字段，便于区分素材来源。',
+      },
+      {
+        key: 'description',
+        label: '素材备注',
+        type: 'textarea',
+        rows: 2,
+        defaultValue: 'Pinterest 图片素材',
+        placeholder: '用于记录素材描述或批次说明',
+      },
+      {
+        key: 'notifyFeishu',
+        label: '发送飞书通知',
+        type: 'checkbox',
+        defaultValue: true,
+        tooltip: '上传完成后推送飞书消息，包含成功/失败统计与示例链接。',
       },
     ],
     previewUrl: DEFAULT_URL,
@@ -173,9 +205,21 @@
         return;
       }
 
+      const report = data.uploadReport;
+      const reportMap = report?.items
+        ? new Map(report.items.map((item) => [item.id ?? item.imageUrl, item]))
+        : new Map();
+
       const header = document.createElement('div');
       header.className = 'feature-result-header';
-      header.innerHTML = `<span>采集结果</span><span>共 ${pins.length} 项</span>`;
+      const summaryParts = [`共 ${pins.length} 项`];
+      if (report) {
+        summaryParts.push(`成功 ${report.successCount || 0}`);
+        if (report.failCount) {
+          summaryParts.push(`失败 ${report.failCount}`);
+        }
+      }
+      header.innerHTML = `<span>采集结果</span><span>${summaryParts.join(' · ')}</span>`;
       container.appendChild(header);
 
       pins.forEach((pin, index) => {
@@ -208,6 +252,47 @@
         link.textContent =  pin.imageUrl;
         body.appendChild(link);
 
+        const reportEntry = reportMap.get(pin.id ?? pin.imageUrl);
+        if (reportEntry) {
+          const status = document.createElement('div');
+          status.className = 'feature-result-status';
+          if (reportEntry.error) {
+            status.classList.add('error');
+            status.textContent = `上传失败：${reportEntry.error}`;
+          } else {
+            const fragments = [];
+            if (reportEntry.cosUrl) {
+              const cosLink = document.createElement('a');
+              cosLink.href = reportEntry.cosUrl;
+              cosLink.target = '_blank';
+              cosLink.rel = 'noopener noreferrer';
+              cosLink.textContent = 'COS 链接';
+              cosLink.className = 'feature-result-link';
+              fragments.push(cosLink);
+            }
+            if (reportEntry.serverStatus) {
+              const span = document.createElement('span');
+              span.textContent = `服务器：${reportEntry.serverStatus}`;
+              fragments.push(span);
+            }
+            if (fragments.length) {
+              status.classList.add('success');
+              fragments.forEach((node, idx) => {
+                if (idx > 0) {
+                  const separator = document.createElement('span');
+                  separator.textContent = ' · ';
+                  status.appendChild(separator);
+                }
+                status.appendChild(node);
+              });
+            } else {
+              status.textContent = '上传完成';
+              status.classList.add('success');
+            }
+          }
+          body.appendChild(status);
+        }
+
         item.appendChild(body);
         container.appendChild(item);
       });
@@ -216,6 +301,41 @@
       try {
         context.setBusy(true);
         const result = await scrapePinterest(context, params);
+
+        const shouldUpload = Boolean(params?.uploadToCos || params?.notifyFeishu);
+        if (shouldUpload && result?.data?.items?.length) {
+          context.notify('采集完成，正在准备上传到 COS 与服务器…', { tone: 'info' });
+
+          try {
+            const uploadResponse = await context.dispatchBackground({
+              command: 'pinterest/upload',
+              items: result.data.items,
+              options: {
+                uploadToCos: Boolean(params.uploadToCos),
+                uploadToServer: Boolean(params.uploadToCos),
+                notifyFeishu: Boolean(params.notifyFeishu),
+                description: params.description || '',
+                source: params.sourceTag?.trim() || DEFAULT_SOURCE,
+                page: result.data.page || null,
+              },
+            });
+
+            if (uploadResponse?.items) {
+              const { successCount = 0, failCount = 0 } = uploadResponse;
+              const tone = failCount > 0 ? 'warning' : 'success';
+              context.notify(`上传完成：成功 ${successCount} 条${failCount ? `，失败 ${failCount} 条` : ''}`, { tone });
+              if (uploadResponse.error && failCount > 0) {
+                context.notify(uploadResponse.error, { tone: 'warning' });
+              }
+              result.data.uploadReport = uploadResponse;
+            } else if (uploadResponse?.error) {
+              context.notify(`上传失败：${uploadResponse.error}`, { tone: 'error' });
+            }
+          } catch (error) {
+            context.notify(error?.message || '上传过程出现异常', { tone: 'error' });
+          }
+        }
+
         return result;
       } finally {
         context.setBusy(false);

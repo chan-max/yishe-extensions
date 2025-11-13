@@ -24,7 +24,7 @@
 
   // 加载基础功能模块
   function loadSiteModule() {
-    loadModule('common');
+      loadModule('common');
   }
 
   // 加载模块（避免重复加载）
@@ -60,13 +60,13 @@
         if (window.CoreSiteModules && window.CoreSiteModules[moduleName]) {
           const module = window.CoreSiteModules[moduleName];
           if (module.init && typeof module.init === 'function') {
-            try {
+                try {
               const siteInfo = window.CoreSiteDetector?.getCurrentSiteInfo?.() || {};
-              module.init(siteInfo);
-              console.log(`[Core] 已初始化 ${moduleName} 模块`);
-            } catch (error) {
-              console.error(`[Core] 初始化 ${moduleName} 模块失败:`, error);
-            }
+                  module.init(siteInfo);
+                  console.log(`[Core] 已初始化 ${moduleName} 模块`);
+                } catch (error) {
+                  console.error(`[Core] 初始化 ${moduleName} 模块失败:`, error);
+                }
           }
         }
         window[loadingKey] = false;

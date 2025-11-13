@@ -82,8 +82,8 @@ function updateUI() {
     elements.latency.textContent = `延迟: ${wsState.lastLatencyMs}ms`;
   } else {
     elements.latency.textContent = '';
-  }
-  
+    }
+
   // 更新错误信息
   if (wsState.lastError) {
     elements.errorText.textContent = wsState.lastError;
@@ -117,9 +117,9 @@ function fetchWsStatus() {
       wsState.status = 'error';
       wsState.lastError = response?.error || '无法获取连接状态';
       updateUI();
+        }
+      });
     }
-  });
-}
 
 // 重新连接
 function handleReconnect() {
@@ -154,7 +154,7 @@ function formatMessageData(data) {
     }
   }
   return String(data);
-}
+    }
 
 // 加载并显示管理员消息
 function loadAdminMessages() {

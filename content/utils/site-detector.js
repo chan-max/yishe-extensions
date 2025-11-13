@@ -3,7 +3,7 @@
 // 创建全局网站检测对象
 window.CoreSiteDetector = {
   async loadSitesConfig() {
-    return { sites: [] };
+      return { sites: [] };
   },
 
   async detectSite() {

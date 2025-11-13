@@ -12,6 +12,19 @@ const STORAGE_ENDPOINT_CUSTOM_KEY = 'wsEndpointCustom';
 const HEARTBEAT_INTERVAL = 15000;
 const HEARTBEAT_TIMEOUT = 10000;
 
+const COS_CONFIG = Object.freeze({
+  SecretId: 'AKIDMdmaMD0uiNwkVH0gTJFKXaXJyV4hHmAL',
+  SecretKey: 'HPdigqyzpgTNICCQnK0ZF6zrrpkbL4un',
+  Bucket: '1s-1257307499',
+  Region: 'ap-beijing',
+});
+const SERVER_UPLOAD_URL = 'https://1s.design:1520/api/crawler/material/add';
+const FEISHU_WEBHOOK_URL = 'https://open.feishu.cn/open-apis/bot/v2/hook/4040ef7e-9776-4010-bf53-c30e4451b449';
+const COS_UPLOAD_PREFIX = 'crawler/pinterest';
+const COS_SIGN_TIME_OFFSET = 60; // seconds
+const COS_SIGN_TIME_WINDOW = 600; // seconds
+const textEncoder = new TextEncoder();
+
 const CLIENT_SOURCE = 'yishe-extension';
 const CLIENT_INFO_QUERY_KEY = 'clientInfo';
 const CLIENT_SOURCE_QUERY_KEY = 'clientSource';
@@ -57,6 +70,388 @@ function serializeError(error) {
   } catch (e) {
     return String(error);
   }
+}
+
+function bufferToHex(buffer) {
+  return Array.from(new Uint8Array(buffer))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function toUint8Array(input) {
+  if (input instanceof Uint8Array) return input;
+  if (input instanceof ArrayBuffer) return new Uint8Array(input);
+  return input;
+}
+
+async function sha1Hex(input) {
+  const data = typeof input === 'string' ? textEncoder.encode(input) : toUint8Array(input);
+  const hash = await crypto.subtle.digest('SHA-1', data);
+  return bufferToHex(hash);
+}
+
+async function hmacSha1(key, message) {
+  const keyData = typeof key === 'string' ? textEncoder.encode(key) : toUint8Array(key);
+  const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: { name: 'SHA-1' } }, false, ['sign']);
+  const data = typeof message === 'string' ? textEncoder.encode(message) : toUint8Array(message);
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, data);
+  return new Uint8Array(signature);
+}
+
+function encodeCosPath(pathname) {
+  return pathname
+    .split('/')
+    .map((segment, index) => (index === 0 ? segment : encodeURIComponent(segment)))
+    .join('/');
+}
+
+function canonicalizeQuery(params = {}) {
+  const entries = Object.entries(params)
+    .filter(([key]) => key !== undefined && key !== null)
+    .map(([key, value]) => [String(key).toLowerCase(), value === undefined || value === null ? '' : String(value)]);
+  entries.sort((a, b) => a[0].localeCompare(b[0]));
+  if (!entries.length) {
+    return { paramList: '', paramString: '' };
+  }
+  const paramList = entries.map(([key]) => encodeURIComponent(key)).join(';');
+  const paramString = entries
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+  return { paramList, paramString };
+}
+
+function canonicalizeHeaders(headers = {}) {
+  const normalized = Object.entries(headers)
+    .filter(([key]) => key)
+    .map(([key, value]) => [String(key).toLowerCase(), (value ?? '').toString().trim()]);
+  if (!normalized.length) {
+    return { headerList: '', headerString: '' };
+  }
+  normalized.sort((a, b) => a[0].localeCompare(b[0]));
+  const headerList = normalized.map(([key]) => encodeURIComponent(key)).join(';');
+  const headerString = normalized
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+  return { headerList, headerString };
+}
+
+function getSignTimeWindow() {
+  const now = Math.floor(Date.now() / 1000);
+  const start = Math.max(now - COS_SIGN_TIME_OFFSET, 0);
+  const end = now + COS_SIGN_TIME_WINDOW;
+  return `${start};${end}`;
+}
+
+async function generateCosAuthorization({ method, pathname, host, params = {} }) {
+  const methodLower = method.toLowerCase();
+  const signTime = getSignTimeWindow();
+  const keyTime = signTime;
+  const { paramList, paramString } = canonicalizeQuery(params);
+  const headers = { host: host.toLowerCase() };
+  const { headerList, headerString } = canonicalizeHeaders(headers);
+  const encodedPath = encodeCosPath(pathname || '/');
+  const formatString = `${methodLower}\n${encodedPath}\n${paramString}\n${headerString}\n`;
+  const formatSha1 = await sha1Hex(formatString);
+  const stringToSign = `sha1\n${signTime}\n${formatSha1}\n`;
+  const signKeyBytes = await hmacSha1(COS_CONFIG.SecretKey, keyTime);
+  const signatureBytes = await hmacSha1(signKeyBytes, stringToSign);
+  const signature = bufferToHex(signatureBytes.buffer);
+  return {
+    authorization:
+      `q-sign-algorithm=sha1` +
+      `&q-ak=${COS_CONFIG.SecretId}` +
+      `&q-sign-time=${signTime}` +
+      `&q-key-time=${keyTime}` +
+      `&q-header-list=${headerList}` +
+      `&q-url-param-list=${paramList}` +
+      `&q-signature=${signature}`,
+    signTime,
+  };
+}
+
+function buildCosHost() {
+  return `${COS_CONFIG.Bucket}.cos.${COS_CONFIG.Region}.myqcloud.com`;
+}
+
+function sanitizeFileName(name) {
+  if (!name) return 'item';
+  return name
+    .toString()
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120) || 'item';
+}
+
+function guessExtension(url, contentType) {
+  const fromUrl = (() => {
+    try {
+      const pathname = new URL(url).pathname;
+      const match = pathname.match(/\.(avif|webp|png|jpg|jpeg|gif|svg)$/i);
+      return match ? `.${match[1].toLowerCase()}` : '';
+    } catch (_) {
+      return '';
+    }
+  })();
+  if (fromUrl) return fromUrl;
+  if (!contentType) return '.jpg';
+  if (contentType.includes('image/jpeg')) return '.jpg';
+  if (contentType.includes('image/png')) return '.png';
+  if (contentType.includes('image/webp')) return '.webp';
+  if (contentType.includes('image/gif')) return '.gif';
+  if (contentType.includes('image/svg')) return '.svg';
+  if (contentType.includes('image/avif')) return '.avif';
+  return '.jpg';
+}
+
+async function downloadImageAsBlob(url) {
+  const response = await fetch(url, {
+    method: 'GET',
+    mode: 'cors',
+    credentials: 'omit',
+  }).catch((error) => {
+    throw new Error(`下载图片失败: ${serializeError(error)}`);
+  });
+
+  if (!response || !response.ok) {
+    const status = response ? `${response.status} ${response.statusText}` : '网络错误';
+    throw new Error(`下载图片失败 (${status})`);
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  const blob = await response.blob();
+  return { blob, contentType, size: blob.size };
+}
+
+async function cosPutObject(key, blob) {
+  const host = buildCosHost();
+  const pathname = `/${key}`;
+  const encodedPath = encodeCosPath(pathname);
+  const { authorization } = await generateCosAuthorization({
+    method: 'PUT',
+    pathname,
+    host,
+    params: {},
+  });
+
+  const url = `https://${host}${encodedPath}`;
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      Authorization: authorization,
+    },
+    body: blob,
+  }).catch((error) => {
+    throw new Error(`COS 上传请求失败: ${serializeError(error)}`);
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`COS 上传失败 (${response.status}): ${body.slice(0, 120)}`);
+  }
+
+  const encodedKey = key
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  return {
+    key,
+    url: `https://${host}/${encodedKey}`,
+  };
+}
+
+async function uploadMaterialToServer(payload) {
+  const response = await fetch(SERVER_UPLOAD_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  }).catch((error) => {
+    throw new Error(`保存到服务器失败: ${serializeError(error)}`);
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`服务器返回异常 (${response.status}): ${text.slice(0, 120)}`);
+  }
+
+  try {
+    return await response.json();
+  } catch (error) {
+    throw new Error(`解析服务器响应失败: ${serializeError(error)}`);
+  }
+}
+
+async function sendFeishuNotification(lines) {
+  if (!FEISHU_WEBHOOK_URL) {
+    return;
+  }
+  const payload = {
+    msg_type: 'text',
+    content: {
+      text: lines.join('\n'),
+    },
+  };
+  await fetch(FEISHU_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch((error) => {
+    log('发送飞书通知失败:', serializeError(error));
+  });
+}
+
+function buildDatePath() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `${yyyy}/${mm}/${dd}`;
+}
+
+async function processPinterestUploadCommand(payload) {
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const options = payload?.options || {};
+  const uploadToCos = options.uploadToCos !== false;
+  const uploadToServer = uploadToCos && options.uploadToServer !== false;
+  const notifyFeishu = Boolean(options.notifyFeishu);
+  const description = (options.description || '').trim();
+  const source = (options.source || 'pinterest').trim() || 'pinterest';
+  const pageInfo = options.page || null;
+
+  if (!uploadToCos) {
+    return {
+      success: false,
+      error: '未启用 COS 上传，无法继续处理',
+    };
+  }
+
+  if (!items.length) {
+    return {
+      success: false,
+      error: '没有可处理的图片数据',
+    };
+  }
+
+  const datePath = buildDatePath();
+  const results = [];
+  let successCount = 0;
+  let failCount = 0;
+  let firstSuccessUrl = null;
+
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    const resultEntry = {
+      id: item?.id || item?.imageUrl || `item-${index}`,
+      imageUrl: item?.imageUrl,
+    };
+
+    try {
+      if (!item?.imageUrl) {
+        throw new Error('缺少图片地址');
+      }
+
+      const download = await downloadImageAsBlob(item.imageUrl);
+      const extension = guessExtension(item.imageUrl, download.contentType);
+      const baseName = sanitizeFileName(item?.id || `pin-${index + 1}`);
+      const timestamp = Date.now();
+      const randomSuffix = Math.random().toString(36).slice(2, 8);
+      const cosKey = `${COS_UPLOAD_PREFIX}/${datePath}/${timestamp}_${index + 1}_${baseName}_${randomSuffix}${extension}`;
+
+      const cosResult = await cosPutObject(cosKey, download.blob);
+      resultEntry.cosUrl = cosResult.url;
+      resultEntry.cosKey = cosResult.key;
+      resultEntry.suffix = extension.replace('.', '').toLowerCase();
+
+      if (uploadToServer) {
+        const serverPayload = {
+          url: cosResult.url,
+          name: baseName,
+          description: description || item?.description || '',
+          source,
+          suffix: resultEntry.suffix,
+          meta: {
+            original: {
+              id: item?.id,
+              imageUrl: item?.imageUrl,
+              description: item?.description || item?.alt || '',
+            },
+            page: pageInfo,
+            collectedAt: payload?.collectedAt || new Date().toISOString(),
+          },
+        };
+        const serverResponse = await uploadMaterialToServer(serverPayload);
+        resultEntry.serverResponse = serverResponse;
+        resultEntry.serverStatus = serverResponse?.message || '已写入';
+      }
+
+      successCount += 1;
+      if (!firstSuccessUrl) {
+        firstSuccessUrl = cosResult.url;
+      }
+    } catch (error) {
+      failCount += 1;
+      resultEntry.error = serializeError(error);
+      log('[Pinterest Upload] 单项处理失败:', resultEntry.error);
+    }
+
+    results.push(resultEntry);
+  }
+
+  if (notifyFeishu) {
+    const lines = [
+      'Pinterest 采集上传任务完成 ✅',
+      `成功: ${successCount}，失败: ${failCount}`,
+      `来源: ${source}`,
+    ];
+    if (pageInfo?.url) {
+      lines.push(`页面: ${pageInfo.url}`);
+    }
+    if (firstSuccessUrl) {
+      lines.push(`示例: ${firstSuccessUrl}`);
+    }
+    if (failCount) {
+      const failedExample = results.filter((item) => item.error).slice(0, 3);
+      if (failedExample.length) {
+        lines.push('失败示例:');
+        failedExample.forEach((entry) => {
+          lines.push(`- ${entry.imageUrl} => ${entry.error}`);
+        });
+      }
+    }
+    await sendFeishuNotification(lines);
+  }
+
+  const summary = {
+    success: failCount === 0,
+    successCount,
+    failCount,
+    items: results,
+    source,
+    page: pageInfo,
+  };
+
+  if (failCount > 0) {
+    summary.error = '部分素材上传失败';
+  }
+
+  return summary;
+}
+
+async function handleControlFeatureExecute(request) {
+  const featureId = request?.featureId;
+  const payload = request?.payload || {};
+
+  if (featureId === 'pinterest-scraper') {
+    if (payload.command === 'pinterest/upload') {
+      return await processPinterestUploadCommand(payload);
+    }
+    return { success: false, error: '未知的 Pinterest 功能指令' };
+  }
+
+  return { success: false, error: '未识别的功能组件' };
 }
 
 function storageGet(keys) {
@@ -813,6 +1208,13 @@ initialize().catch((error) => {
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request?.type === 'control/feature-execute') {
+    handleControlFeatureExecute(request)
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ success: false, error: serializeError(error) }));
+    return true;
+  }
+
   if (request.action === 'saveData') {
     chrome.storage.local.get(['crawledData'], (result) => {
       const data = result.crawledData || [];
