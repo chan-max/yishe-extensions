@@ -5,74 +5,129 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>YiShe 助手 - 控制面板</title>
   <link rel="stylesheet" href="../popup/popup.css">
-  <style>
-    /* 让页面主体适应整页视口（独立标签页场景） */
-    html, body {
-      width: 100vw;
-      height: 100vh;
-      background: var(--background);
-    }
-  </style>
   <link rel="icon" href="data:,">
   <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval' 'inline-speculation-rules'; object-src 'self'">
   <meta http-equiv="Permissions-Policy" content="interest-cohort=()">
 </head>
-<body>
-  <div class="popup-container">
-    <header class="popup-header">
-      <div class="header-title">WebSocket 状态（控制面板）</div>
-      <div class="header-subtitle">浏览器插件实时连接</div>
-    </header>
+<body class="control-page">
+  <div class="control-layout">
+    <aside class="control-sidebar">
+      <div class="control-brand">
+        <div class="control-brand-logo">Yi</div>
+        <div class="control-brand-info">
+          <div class="control-brand-name">YiShe 控制台</div>
+          <div class="control-brand-desc">插件管理中心</div>
+        </div>
+      </div>
+      <nav class="control-nav">
+        <a href="#panel-ws" class="control-nav-item active">WebSocket 状态</a>
+        <a href="#panel-messages" class="control-nav-item">管理员消息</a>
+        <a href="#panel-links" class="control-nav-item">快捷入口</a>
+      </nav>
+      <div class="control-nav-foot">
+        <div class="control-nav-foot-title">其它</div>
+        <button id="control-open-popup" class="control-nav-action">打开弹窗视图</button>
+      </div>
+    </aside>
 
-    <main class="popup-content">
-      <section class="ws-status-card">
-        <div id="loading" class="loading">状态加载中...</div>
-        <div id="ws-status-content" style="display: none;">
-          <div class="ws-status-header">
-            <div class="ws-status-indicator">
-              <span id="status-dot" class="status-dot disconnected"></span>
-              <span id="ws-status-label" class="ws-status-label">已断开</span>
+    <main class="control-main">
+      <header class="control-main-header">
+        <h1>1s 插件系统 · 控制面板</h1>
+        <p>实时掌控浏览器插件运行状态与协作信息</p>
+      </header>
+
+      <section id="panel-ws" class="control-section">
+        <div class="control-section-header">
+          <div>
+            <h2 class="section-title">WebSocket 实时状态</h2>
+            <p class="section-subtitle">查看后台服务连接情况与延迟</p>
+          </div>
+        </div>
+
+        <div class="ws-status-card">
+          <div id="loading" class="loading">状态加载中...</div>
+          <div id="ws-status-content" style="display: none;">
+            <div class="ws-status-header">
+              <div class="ws-status-indicator">
+                <span id="status-dot" class="status-dot disconnected"></span>
+                <span id="ws-status-label" class="ws-status-label">已断开</span>
+              </div>
+              <button id="reconnect-btn" class="ws-reconnect-btn" disabled>
+                重新连接
+              </button>
             </div>
-            <button id="reconnect-btn" class="ws-reconnect-btn" disabled>
-              重新连接
-            </button>
-          </div>
-          <div id="ws-status-endpoint" class="ws-status-endpoint" title="未配置">
-            未配置
-          </div>
-          <div id="ws-status-meta" class="ws-status-meta" style="display: none;">
-            <span id="ping-time"></span>
-            <span id="pong-time"></span>
-            <span id="latency"></span>
-          </div>
-          <div id="ws-status-error" class="ws-status-error" style="display: none;">
-            错误：<span id="error-text"></span>
+            <div id="ws-status-endpoint" class="ws-status-endpoint" title="未配置">
+              未配置
+            </div>
+            <div id="ws-status-meta" class="ws-status-meta" style="display: none;">
+              <span id="ping-time"></span>
+              <span id="pong-time"></span>
+              <span id="latency"></span>
+            </div>
+            <div id="ws-status-error" class="ws-status-error" style="display: none;">
+              错误：<span id="error-text"></span>
+            </div>
           </div>
         </div>
       </section>
 
-      <section class="admin-messages-card">
-        <div class="section-header">
-          <div class="section-title">管理员消息</div>
-          <button id="clear-messages-btn" class="clear-messages-btn" title="清空消息">清空</button>
+      <section id="panel-messages" class="control-section">
+        <div class="control-section-header">
+          <div>
+            <h2 class="section-title">管理员消息</h2>
+            <p class="section-subtitle">实时推送公告与维护通知</p>
+          </div>
+          <button id="clear-messages-btn" class="clear-messages-btn" title="清空消息">清空全部</button>
         </div>
-        <div id="admin-messages-list" class="admin-messages-list">
-        </div>
-        <div id="admin-messages-empty" class="admin-messages-empty" style="display: none;">
-          暂无消息
+        <div class="admin-messages-card">
+          <div id="admin-messages-list" class="admin-messages-list"></div>
+          <div id="admin-messages-empty" class="admin-messages-empty" style="display: none;">
+            暂无消息
+          </div>
         </div>
       </section>
 
-      <section class="quick-links-card">
-        <div class="section-header">
-          <div class="section-title">快速跳转</div>
+      <section id="panel-links" class="control-section">
+        <div class="control-section-header">
+          <div>
+            <h2 class="section-title">快速跳转</h2>
+            <p class="section-subtitle">常用后台与协作工具一键开启</p>
+          </div>
         </div>
-        <ul class="quick-links-list" id="quick-links-list">
-        </ul>
+        <div class="quick-links-card">
+          <ul class="quick-links-list" id="quick-links-list"></ul>
+        </div>
       </section>
     </main>
   </div>
+
   <script src="../popup/popup.js"></script>
+  <script>
+    (function() {
+      const navItems = Array.from(document.querySelectorAll('.control-nav-item'));
+      navItems.forEach((item) => {
+        item.addEventListener('click', () => {
+          navItems.forEach(nav => nav.classList.remove('active'));
+          item.classList.add('active');
+        });
+      });
+
+      const openPopupBtn = document.getElementById('control-open-popup');
+      if (openPopupBtn) {
+        openPopupBtn.addEventListener('click', () => {
+          try {
+            const popupUrl = chrome?.runtime?.getURL('popup/popup.html') || '../popup/popup.html';
+            chrome?.tabs?.create
+              ? chrome.tabs.create({ url: popupUrl })
+              : window.open(popupUrl, '_blank');
+          } catch (error) {
+            console.warn('[control] 无法调用 chrome.tabs.create，将尝试直接打开页面', error);
+            window.open('../popup/popup.html', '_blank');
+          }
+        });
+      }
+    })();
+  </script>
 </body>
 </html>
 
