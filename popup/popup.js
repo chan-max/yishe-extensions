@@ -44,6 +44,7 @@ const elements = {
   adminMessagesList: document.getElementById('admin-messages-list'),
   adminMessagesEmpty: document.getElementById('admin-messages-empty'),
   clearMessagesBtn: document.getElementById('clear-messages-btn'),
+  openInTabBtn: document.getElementById('open-in-tab-btn'),
 };
 
 // 格式化时间戳
@@ -311,10 +312,17 @@ document.addEventListener('DOMContentLoaded', () => {
     clearMessagesBtn: !!elements.clearMessagesBtn,
   });
   
-  initQuickLinks();
+  // 仅当存在快捷链接容器时才初始化
+  if (elements.quickLinksList) {
+    initQuickLinks();
+  }
   setupMessageListener();
   fetchWsStatus();
-  loadAdminMessages();
+
+  // 仅当存在消息容器时才加载消息
+  if (elements.adminMessagesList && elements.adminMessagesEmpty) {
+    loadAdminMessages();
+  }
   
   // 绑定重新连接按钮
   if (elements.reconnectBtn) {
@@ -324,6 +332,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // 绑定清空消息按钮
   if (elements.clearMessagesBtn) {
     elements.clearMessagesBtn.addEventListener('click', clearAdminMessages);
+  }
+
+  // 在新标签页打开
+  if (elements.openInTabBtn) {
+    elements.openInTabBtn.addEventListener('click', () => {
+      const url = chrome.runtime.getURL('pages/control.html');
+      chrome.tabs.create({ url });
+      try {
+        window.close();
+      } catch {}
+    });
   }
   
   console.log('[popup] DOMContentLoaded: 初始化完成');

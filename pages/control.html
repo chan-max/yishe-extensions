@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YiShe 助手 - 控制面板</title>
+  <link rel="stylesheet" href="../popup/popup.css">
+  <style>
+    /* 让页面主体适应整页视口（独立标签页场景） */
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      background: var(--background);
+    }
+  </style>
+  <link rel="icon" href="data:,">
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval' 'inline-speculation-rules'; object-src 'self'">
+  <meta http-equiv="Permissions-Policy" content="interest-cohort=()">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="popup-header">
+      <div class="header-title">WebSocket 状态（控制面板）</div>
+      <div class="header-subtitle">浏览器插件实时连接</div>
+    </header>
+
+    <main class="popup-content">
+      <section class="ws-status-card">
+        <div id="loading" class="loading">状态加载中...</div>
+        <div id="ws-status-content" style="display: none;">
+          <div class="ws-status-header">
+            <div class="ws-status-indicator">
+              <span id="status-dot" class="status-dot disconnected"></span>
+              <span id="ws-status-label" class="ws-status-label">已断开</span>
+            </div>
+            <button id="reconnect-btn" class="ws-reconnect-btn" disabled>
+              重新连接
+            </button>
+          </div>
+          <div id="ws-status-endpoint" class="ws-status-endpoint" title="未配置">
+            未配置
+          </div>
+          <div id="ws-status-meta" class="ws-status-meta" style="display: none;">
+            <span id="ping-time"></span>
+            <span id="pong-time"></span>
+            <span id="latency"></span>
+          </div>
+          <div id="ws-status-error" class="ws-status-error" style="display: none;">
+            错误：<span id="error-text"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="admin-messages-card">
+        <div class="section-header">
+          <div class="section-title">管理员消息</div>
+          <button id="clear-messages-btn" class="clear-messages-btn" title="清空消息">清空</button>
+        </div>
+        <div id="admin-messages-list" class="admin-messages-list">
+        </div>
+        <div id="admin-messages-empty" class="admin-messages-empty" style="display: none;">
+          暂无消息
+        </div>
+      </section>
+
+      <section class="quick-links-card">
+        <div class="section-header">
+          <div class="section-title">快速跳转</div>
+        </div>
+        <ul class="quick-links-list" id="quick-links-list">
+        </ul>
+      </section>
+    </main>
+  </div>
+  <script src="../popup/popup.js"></script>
+</body>
+</html>
+
+

@@ -231,17 +231,14 @@ window.CoreFloatingRobot = {
     // 创建机器人容器
     const container = window.CoreDOMUtils.createElement('div', 'core-robot-container');
     this.robotElement = this.createRobotIcon();
-    this.menuElement = this.createMenu();
+    // 保留悬浮机器人，但移除点击后弹出菜单
+    this.menuElement = null;
 
     container.appendChild(this.robotElement);
-    container.appendChild(this.menuElement);
+    // 不再附加菜单到页面
     document.body.appendChild(container);
 
-    // 绑定事件
-    this.robotElement.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.openMenu();
-    });
+    // 不再绑定点击打开菜单事件（保留拖拽等交互）
 
     // 初始位置（右下角），改为使用 top/left，避免与 bottom/right 冲突
     const setInitialPosition = () => {
