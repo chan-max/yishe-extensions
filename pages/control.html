@@ -21,6 +21,7 @@
       </div>
       <nav class="control-nav">
         <a href="#panel-ws" class="control-nav-item active">WebSocket 状态</a>
+        <a href="#panel-features" class="control-nav-item">功能列表</a>
         <a href="#panel-messages" class="control-nav-item">管理员消息</a>
         <a href="#panel-links" class="control-nav-item">快捷入口</a>
       </nav>
@@ -71,6 +72,17 @@
         </div>
       </section>
 
+      <section id="panel-features" class="control-section">
+        <div class="control-section-header">
+          <div>
+            <h2 class="section-title">功能列表</h2>
+            <p class="section-subtitle">数据工具与自动化操作入口</p>
+          </div>
+        </div>
+
+        <div id="feature-groups" class="feature-groups"></div>
+      </section>
+
       <section id="panel-messages" class="control-section">
         <div class="control-section-header">
           <div>
@@ -102,32 +114,9 @@
   </div>
 
   <script src="../popup/popup.js"></script>
-  <script>
-    (function() {
-      const navItems = Array.from(document.querySelectorAll('.control-nav-item'));
-      navItems.forEach((item) => {
-        item.addEventListener('click', () => {
-          navItems.forEach(nav => nav.classList.remove('active'));
-          item.classList.add('active');
-        });
-      });
-
-      const openPopupBtn = document.getElementById('control-open-popup');
-      if (openPopupBtn) {
-        openPopupBtn.addEventListener('click', () => {
-          try {
-            const popupUrl = chrome?.runtime?.getURL('popup/popup.html') || '../popup/popup.html';
-            chrome?.tabs?.create
-              ? chrome.tabs.create({ url: popupUrl })
-              : window.open(popupUrl, '_blank');
-          } catch (error) {
-            console.warn('[control] 无法调用 chrome.tabs.create，将尝试直接打开页面', error);
-            window.open('../popup/popup.html', '_blank');
-          }
-        });
-      }
-    })();
-  </script>
+  <script src="./features/registry.js"></script>
+  <script src="./features/pinterest.js"></script>
+  <script src="./control.js"></script>
 </body>
 </html>
 
