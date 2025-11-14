@@ -283,6 +283,372 @@ async function processPinterestUploadCommand(payload) {
   return summary;
 }
 
+const PINTEREST_SCHEDULE_ALARM_NAME = 'pinterest-scheduled-scrape';
+const PINTEREST_SCHEDULE_STORAGE_KEY = 'pinterestScheduleConfig';
+
+async function handlePinterestSchedule(payload) {
+  const action = payload?.action;
+  
+  if (action === 'set') {
+    const intervalMinutes = payload?.intervalMinutes || 60;
+    const params = payload?.params || {};
+    
+    // 保存定时任务配置
+    const scheduleConfig = {
+      params,
+      intervalMinutes,
+      createdAt: new Date().toISOString(),
+    };
+    
+    try {
+      await storageSet({ [PINTEREST_SCHEDULE_STORAGE_KEY]: scheduleConfig });
+      
+      // 清除旧的定时任务
+      try {
+        await chrome.alarms.clear(PINTEREST_SCHEDULE_ALARM_NAME);
+      } catch (e) {
+        // 忽略清除失败（可能不存在）
+      }
+      
+      // 创建新的定时任务（周期性的）
+      chrome.alarms.create(PINTEREST_SCHEDULE_ALARM_NAME, {
+        periodInMinutes: intervalMinutes,
+      });
+      
+      log(`[Pinterest] 定时任务已设置：每 ${intervalMinutes} 分钟执行一次`);
+      return {
+        success: true,
+        message: `定时任务已设置：每 ${intervalMinutes} 分钟执行一次`,
+      };
+    } catch (error) {
+      log('[Pinterest] 设置定时任务失败:', serializeError(error));
+      return {
+        success: false,
+        error: serializeError(error),
+      };
+    }
+  } else if (action === 'clear') {
+    try {
+      await chrome.alarms.clear(PINTEREST_SCHEDULE_ALARM_NAME);
+      await storageSet({ [PINTEREST_SCHEDULE_STORAGE_KEY]: null });
+      log('[Pinterest] 定时任务已清除');
+      return {
+        success: true,
+        message: '定时任务已清除',
+      };
+    } catch (error) {
+      log('[Pinterest] 清除定时任务失败:', serializeError(error));
+      return {
+        success: false,
+        error: serializeError(error),
+      };
+    }
+  } else if (action === 'get') {
+    try {
+      const config = await storageGet([PINTEREST_SCHEDULE_STORAGE_KEY]);
+      const scheduleConfig = config[PINTEREST_SCHEDULE_STORAGE_KEY];
+      
+      // 检查定时任务是否存在
+      const alarm = await new Promise((resolve) => {
+        chrome.alarms.get(PINTEREST_SCHEDULE_ALARM_NAME, (alarm) => {
+          resolve(alarm);
+        });
+      });
+      
+      return {
+        success: true,
+        enabled: Boolean(alarm && scheduleConfig),
+        config: scheduleConfig,
+        nextAlarmTime: alarm?.scheduledTime || null,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: serializeError(error),
+      };
+    }
+  }
+  
+  return {
+    success: false,
+    error: '未知的定时任务操作',
+  };
+}
+
+// Pinterest 爬取相关的辅助函数（在页面上下文中执行）
+async function scrapePinsInPage(options = {}) {
+  try {
+    const {
+      maxCount = 50,
+      maxRounds = 60,
+      scrollDelay = 1200,
+      maxIdleRounds = 3,
+      timeout = 60000,
+    } = options;
+
+    const start = Date.now();
+    const seen = new Set();
+    const items = [];
+    let idleRounds = 0;
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function collectOnce() {
+      const pins = [];
+      document
+        .querySelectorAll('div[data-test-id="pin"], [data-grid-item="true"]')
+        .forEach((pinElement) => {
+          const linkElement = pinElement.querySelector('a[href*="/pin/"]');
+          const imgElement = pinElement.querySelector('img');
+          const descriptionElement = pinElement.querySelector('[data-test-id="pin-description"]');
+
+          if (!linkElement || !imgElement) {
+            return;
+          }
+
+          const idMatch = linkElement.href.match(/\/pin\/(\d+)/);
+          const id = idMatch ? idMatch[1] : linkElement.href;
+          if (!id || seen.has(id)) {
+            return;
+          }
+
+          seen.add(id);
+
+          const imageUrl = imgElement.srcset
+            ? imgElement.srcset.split(',').pop().trim().split(' ')[0]
+            : imgElement.currentSrc || imgElement.src;
+
+          pins.push({
+            id,
+            url: linkElement.href,
+            imageUrl,
+            alt: imgElement.alt || imgElement.title || '',
+            description: descriptionElement ? descriptionElement.innerText.trim() : '',
+          });
+        });
+      return pins;
+    }
+
+    for (let round = 0; round < maxRounds; round += 1) {
+      if (Date.now() - start > timeout) {
+        break;
+      }
+
+      const newPins = collectOnce();
+      if (newPins.length === 0) {
+        idleRounds += 1;
+      } else {
+        idleRounds = 0;
+        items.push(...newPins);
+      }
+
+      if (items.length >= maxCount) {
+        break;
+      }
+
+      if (idleRounds >= maxIdleRounds) {
+        break;
+      }
+
+      window.scrollBy({ top: window.innerHeight * 0.9, behavior: 'smooth' });
+      await sleep(scrollDelay);
+    }
+
+    return {
+      items,
+      collectedAt: new Date().toISOString(),
+      page: {
+        url: location.href,
+        title: document.title,
+      },
+      metrics: {
+        elapsedMs: Date.now() - start,
+        total: items.length,
+      },
+    };
+  } catch (error) {
+    return { error: error?.message || '采集过程中出现未知错误' };
+  }
+}
+
+function waitForPinsInPage(timeoutMs = 15000, pollInterval = 600) {
+  const start = Date.now();
+
+  function hasPins() {
+    return document.querySelector('div[data-test-id="pin"], [data-grid-item="true"]');
+  }
+
+  if (hasPins()) {
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolve) => {
+    const timer = setInterval(() => {
+      if (hasPins()) {
+        clearInterval(timer);
+        resolve(true);
+      } else if (Date.now() - start > timeoutMs) {
+        clearInterval(timer);
+        resolve(false);
+      }
+    }, pollInterval);
+  });
+}
+
+async function createTabAndWait(url, timeoutMs = 45000) {
+  if (!chrome?.tabs?.create) {
+    throw new Error('当前环境不支持创建标签页');
+  }
+
+  // 在后台打开标签页，不激活（不跳转）
+  const tab = await new Promise((resolve, reject) => {
+    chrome.tabs.create({ url, active: false }, (createdTab) => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new Error(error.message || '创建标签页失败'));
+        return;
+      }
+      resolve(createdTab);
+    });
+  });
+
+  await waitForTabComplete(tab.id, timeoutMs);
+  return tab;
+}
+
+function waitForTabComplete(tabId, timeoutMs = 45000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('等待页面加载超时，可能网络较慢或链接不可达'));
+    }, timeoutMs);
+
+    function listener(updatedTabId, changeInfo, tab) {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        cleanup();
+        resolve(tab);
+      }
+    }
+
+    function cleanup() {
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+    }
+
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+async function executeScrape(tabId, options) {
+  if (!chrome?.scripting?.executeScript) {
+    throw new Error('当前环境不支持脚本注入，请检查扩展权限');
+  }
+
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: scrapePinsInPage,
+    args: [options],
+  });
+
+  const first = Array.isArray(results) ? results[0] : null;
+  const result = first?.result;
+
+  if (!result || typeof result !== 'object') {
+    throw new Error('采集结果无效，可能页面结构发生变更');
+  }
+  if (result.error) {
+    throw new Error(result.error);
+  }
+  return result;
+}
+
+async function waitForPinContent(tabId, timeoutMs, pollInterval) {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: waitForPinsInPage,
+    args: [timeoutMs, pollInterval],
+  });
+
+  const first = Array.isArray(results) ? results[0] : null;
+  return Boolean(first?.result);
+}
+
+async function executeScheduledPinterestScrape(params) {
+  // 如果提供了参数，使用参数执行；否则从存储中读取定时任务配置
+  if (params) {
+    return await executePinterestScrapeWithParams(params);
+  }
+  
+  log('[Pinterest] 开始执行定时爬取任务');
+  
+  const DEFAULT_SOURCE = 'pinterest';
+  
+  try {
+    // 获取定时任务配置
+    const config = await storageGet([PINTEREST_SCHEDULE_STORAGE_KEY]);
+    const scheduleConfig = config[PINTEREST_SCHEDULE_STORAGE_KEY];
+    
+    if (!scheduleConfig || !scheduleConfig.params) {
+      log('[Pinterest] 定时任务配置不存在，跳过执行');
+      return {
+        success: false,
+        error: '定时任务配置不存在',
+      };
+    }
+    
+    const taskParams = scheduleConfig.params;
+    
+    log('[Pinterest] 定时任务参数:', {
+      targetUrl: taskParams.targetUrl,
+      maxCount: taskParams.count,
+      uploadToServer: taskParams.uploadToServer,
+      notifyFeishu: taskParams.notifyFeishu,
+    });
+    
+    // 执行爬取
+    const result = await executePinterestScrapeWithParams(taskParams);
+    
+    // 如果需要上传到服务器
+    const shouldUpload = Boolean(taskParams?.uploadToServer || taskParams?.notifyFeishu);
+    if (shouldUpload && result?.data?.items?.length) {
+      log('[Pinterest] 采集完成，正在准备上传到服务器…');
+      
+      try {
+        const uploadResponse = await processPinterestUploadCommand({
+          items: result.data.items,
+          options: {
+            uploadToServer: Boolean(taskParams.uploadToServer),
+            notifyFeishu: Boolean(taskParams.notifyFeishu),
+            description: taskParams.description || '',
+            source: taskParams.sourceTag?.trim() || DEFAULT_SOURCE,
+            page: result.data.page || null,
+          },
+        });
+        
+        if (uploadResponse?.items) {
+          const { successCount = 0, failCount = 0 } = uploadResponse;
+          log(`[Pinterest] 上传完成：成功 ${successCount} 条${failCount ? `，失败 ${failCount} 条` : ''}`);
+        } else if (uploadResponse?.error) {
+          log(`[Pinterest] 上传失败：${uploadResponse.error}`);
+        }
+      } catch (error) {
+        log('[Pinterest] 上传过程出现异常:', serializeError(error));
+      }
+    }
+    
+    log('[Pinterest] 定时爬取任务执行完成');
+    return result;
+  } catch (error) {
+    log('[Pinterest] 执行定时爬取任务失败:', serializeError(error));
+    return {
+      success: false,
+      error: serializeError(error),
+    };
+  }
+}
+
 async function handleControlFeatureExecute(request) {
   const featureId = request?.featureId;
   const payload = request?.payload || {};
@@ -290,6 +656,9 @@ async function handleControlFeatureExecute(request) {
   if (featureId === 'pinterest-scraper') {
     if (payload.command === 'pinterest/upload') {
       return await processPinterestUploadCommand(payload);
+    }
+    if (payload.command === 'pinterest/schedule') {
+      return await handlePinterestSchedule(payload);
     }
     return { success: false, error: '未知的 Pinterest 功能指令' };
   }
@@ -864,6 +1233,15 @@ function handleAdminMessage(data) {
   log('[handleAdminMessage] 输入数据:', data);
   
   try {
+    // 检查是否是 Pinterest 爬取命令
+    if (data && typeof data === 'object' && data.command === 'pinterest/scrape') {
+      log('[handleAdminMessage] 收到 Pinterest 爬取命令');
+      handlePinterestScrapeCommand(data).catch((error) => {
+        log('[handleAdminMessage] 处理 Pinterest 爬取命令失败:', serializeError(error));
+      });
+      return; // 爬取命令不需要存储和通知
+    }
+
     const messageData = {
       timestamp: new Date().toISOString(),
       data: data,
@@ -956,6 +1334,141 @@ function handleAdminMessage(data) {
   }
 }
 
+// 处理 Pinterest 爬取命令
+async function handlePinterestScrapeCommand(data) {
+  const params = data.params || {};
+  const DEFAULT_URL = 'https://www.pinterest.com/today/';
+  const DEFAULT_MAX_COUNT = 10;
+  const DEFAULT_SOURCE = 'pinterest';
+  
+  log('[Pinterest] 收到爬取命令:', params);
+  
+  try {
+    // 执行爬取任务
+    const result = await executeScheduledPinterestScrape(params);
+    
+    // 如果需要上传到服务器
+    const shouldUpload = Boolean(params?.uploadToServer || params?.notifyFeishu);
+    if (shouldUpload && result?.data?.items?.length) {
+      log('[Pinterest] 开始上传到服务器…');
+      
+      try {
+        const uploadResponse = await processPinterestUploadCommand({
+          items: result.data.items,
+          options: {
+            uploadToServer: Boolean(params.uploadToServer),
+            notifyFeishu: Boolean(params.notifyFeishu),
+            description: params.description || '',
+            source: params.sourceTag?.trim() || DEFAULT_SOURCE,
+            page: result.data.page || null,
+          },
+        });
+        
+        if (uploadResponse?.items) {
+          const { successCount = 0, failCount = 0 } = uploadResponse;
+          log(`[Pinterest] 上传完成：成功 ${successCount} 条${failCount ? `，失败 ${failCount} 条` : ''}`);
+        } else if (uploadResponse?.error) {
+          log(`[Pinterest] 上传失败：${uploadResponse.error}`);
+        }
+      } catch (error) {
+        log('[Pinterest] 上传过程出现异常:', serializeError(error));
+      }
+    }
+    
+    // 通过 WebSocket 发送结果回管理系统（如果需要）
+    if (socket && socket.connected) {
+      socket.emit('pinterest-scrape-result', {
+        success: true,
+        message: result.message || '爬取完成',
+        data: {
+          itemCount: result.data?.items?.length || 0,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
+  } catch (error) {
+    log('[Pinterest] 处理爬取命令失败:', serializeError(error));
+    
+    // 通过 WebSocket 发送错误回管理系统
+    if (socket && socket.connected) {
+      socket.emit('pinterest-scrape-result', {
+        success: false,
+        error: serializeError(error),
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+}
+
+// 执行 Pinterest 爬取任务（接受参数）
+async function executePinterestScrapeWithParams(params) {
+  const DEFAULT_URL = 'https://www.pinterest.com/today/';
+  const CONTENT_SCRIPT_TIMEOUT = 60000;
+  const PIN_READY_TIMEOUT = 15000;
+  const PIN_READY_POLL_INTERVAL = 600;
+  const DEFAULT_MAX_COUNT = 10;
+  
+  const targetUrl = params?.targetUrl?.trim() || DEFAULT_URL;
+  const maxCount = params?.count && Number.isFinite(params.count) ? params.count : DEFAULT_MAX_COUNT;
+  let tab = null;
+  
+  try {
+    log('[Pinterest] 开始执行爬取任务:', { targetUrl, maxCount });
+    
+    // 创建标签页并等待加载
+    tab = await createTabAndWait(targetUrl);
+    
+    log('[Pinterest] 页面加载完成，等待内容渲染…');
+    
+    // 等待内容渲染
+    const ready = await waitForPinContent(tab.id, PIN_READY_TIMEOUT, PIN_READY_POLL_INTERVAL);
+    if (!ready) {
+      throw new Error('在限定时间内未检测到图片列表，请确认页面内容或登录状态');
+    }
+    
+    log('[Pinterest] 内容就绪，开始采集图片…');
+    const scrapeOptions = {
+      maxCount,
+      scrollDelay: 1200,
+      maxRounds: 60,
+      maxIdleRounds: 3,
+      timeout: CONTENT_SCRIPT_TIMEOUT,
+    };
+    
+    // 执行爬取
+    const data = await executeScrape(tab.id, scrapeOptions);
+    
+    log(`[Pinterest] 采集完成，共 ${data.items.length} 条图片链接`);
+    
+    return {
+      success: true,
+      data,
+      message: `采集完成，共 ${data.items.length} 条图片链接`,
+    };
+  } catch (error) {
+    log('[Pinterest] 执行爬取任务失败:', serializeError(error));
+    return {
+      success: false,
+      error: serializeError(error),
+    };
+  } finally {
+    // 运行结束后自动关闭标签页
+    if (tab && tab.id) {
+      try {
+        chrome.tabs.remove(tab.id, () => {
+          if (chrome.runtime.lastError) {
+            log('[Pinterest] 关闭标签页失败:', chrome.runtime.lastError.message);
+          } else {
+            log('[Pinterest] 标签页已自动关闭');
+          }
+        });
+      } catch (error) {
+        log('[Pinterest] 关闭标签页异常:', serializeError(error));
+      }
+    }
+  }
+}
+
 async function ensureEndpoint() {
   try {
     const result = await storageGet([STORAGE_ENDPOINT_KEY, STORAGE_ENDPOINT_CUSTOM_KEY]);
@@ -1018,6 +1531,38 @@ function setEndpoint(newEndpoint, callback) {
     });
 }
 
+async function restorePinterestSchedule() {
+  try {
+    const config = await storageGet([PINTEREST_SCHEDULE_STORAGE_KEY]);
+    const scheduleConfig = config[PINTEREST_SCHEDULE_STORAGE_KEY];
+    
+    if (!scheduleConfig || !scheduleConfig.params) {
+      return;
+    }
+    
+    const intervalMinutes = scheduleConfig.intervalMinutes || 60;
+    
+    // 检查定时任务是否已存在
+    const alarm = await new Promise((resolve) => {
+      chrome.alarms.get(PINTEREST_SCHEDULE_ALARM_NAME, (alarm) => {
+        resolve(alarm);
+      });
+    });
+    
+    // 如果定时任务不存在，重新创建
+    if (!alarm) {
+      chrome.alarms.create(PINTEREST_SCHEDULE_ALARM_NAME, {
+        periodInMinutes: intervalMinutes,
+      });
+      log(`[Pinterest] 定时任务已恢复：每 ${intervalMinutes} 分钟执行一次`);
+    } else {
+      log(`[Pinterest] 定时任务已存在，无需恢复`);
+    }
+  } catch (error) {
+    log('[Pinterest] 恢复定时任务失败:', serializeError(error));
+  }
+}
+
 async function initialize() {
   try {
     await ensureEndpoint();
@@ -1028,6 +1573,8 @@ async function initialize() {
     await initWebsocket();
     // 初始化后再次广播状态（确保状态已更新）
     broadcastWsState();
+    // 恢复 Pinterest 定时任务
+    await restorePinterestSchedule();
   } catch (error) {
     log('初始化 WebSocket 失败:', serializeError(error));
     updateWsState({
@@ -1154,6 +1701,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url) {
     console.log('[Core] 标签页已加载:', tab.url);
+  }
+});
+
+// 监听定时任务触发
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === PINTEREST_SCHEDULE_ALARM_NAME) {
+    log('[Pinterest] 定时任务触发:', alarm);
+    executeScheduledPinterestScrape().catch((error) => {
+      log('[Pinterest] 定时任务执行失败:', serializeError(error));
+    });
   }
 });
 

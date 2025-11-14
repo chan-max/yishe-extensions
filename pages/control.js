@@ -142,6 +142,18 @@
       ensureResultContainer(card);
     }
 
+    // 如果 feature 有 onCardRendered 回调，在卡片渲染后调用
+    if (typeof feature.onCardRendered === 'function') {
+      // 使用 setTimeout 确保 DOM 已完全渲染
+      setTimeout(() => {
+        try {
+          feature.onCardRendered({ card, feature });
+        } catch (error) {
+          console.warn(`[control] Feature ${feature.id} onCardRendered 执行失败:`, error);
+        }
+      }, 0);
+    }
+
     return card;
   }
 
