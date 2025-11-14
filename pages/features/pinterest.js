@@ -18,8 +18,9 @@
       throw new Error('当前环境不支持创建标签页');
     }
 
+    // 在后台打开标签页，不激活（不跳转）
     const tab = await new Promise((resolve, reject) => {
-      chrome.tabs.create({ url, active: true }, (createdTab) => {
+      chrome.tabs.create({ url, active: false }, (createdTab) => {
         const error = chrome.runtime.lastError;
         if (error) {
           reject(new Error(error.message || '创建标签页失败'));
@@ -93,33 +94,52 @@
   async function scrapePinterest(context, params) {
     const targetUrl = params?.targetUrl?.trim() || DEFAULT_URL;
     const maxCount = params?.count && Number.isFinite(params.count) ? params.count : DEFAULT_MAX_COUNT;
+    let tab = null;
 
-    context.notify('正在打开目标页面…', { tone: 'info' });
-    const tab = await createTabAndWait(targetUrl);
+    try {
+      context.notify('正在后台打开目标页面…', { tone: 'info' });
+      tab = await createTabAndWait(targetUrl);
 
-    context.notify('页面加载完成，等待内容渲染…', { tone: 'info' });
+      context.notify('页面加载完成，等待内容渲染…', { tone: 'info' });
 
-    const ready = await waitForPinContent(tab.id, PIN_READY_TIMEOUT, PIN_READY_POLL_INTERVAL);
-    if (!ready) {
-      throw new Error('在限定时间内未检测到图片列表，请确认页面内容或登录状态');
+      const ready = await waitForPinContent(tab.id, PIN_READY_TIMEOUT, PIN_READY_POLL_INTERVAL);
+      if (!ready) {
+        throw new Error('在限定时间内未检测到图片列表，请确认页面内容或登录状态');
+      }
+
+      context.notify('内容就绪，开始采集图片…', { tone: 'info' });
+      const scrapeOptions = {
+        maxCount,
+        scrollDelay: 1200,
+        maxRounds: 60,
+        maxIdleRounds: 3,
+        timeout: CONTENT_SCRIPT_TIMEOUT,
+      };
+
+      const data = await executeScrape(tab.id, scrapeOptions);
+
+      return {
+        message: `采集完成，共 ${data.items.length} 条图片链接。`,
+        tone: 'success',
+        data,
+        tabId: tab.id, // 返回标签页ID，用于后续关闭
+      };
+    } finally {
+      // 运行结束后自动关闭标签页
+      if (tab && tab.id) {
+        try {
+          chrome.tabs.remove(tab.id, () => {
+            if (chrome.runtime.lastError) {
+              console.warn('[Pinterest] 关闭标签页失败:', chrome.runtime.lastError.message);
+            } else {
+              console.log('[Pinterest] 标签页已自动关闭');
+            }
+          });
+        } catch (error) {
+          console.warn('[Pinterest] 关闭标签页异常:', error);
+        }
+      }
     }
-
-    context.notify('内容就绪，开始采集图片…', { tone: 'info' });
-    const scrapeOptions = {
-      maxCount,
-      scrollDelay: 1200,
-      maxRounds: 60,
-      maxIdleRounds: 3,
-      timeout: CONTENT_SCRIPT_TIMEOUT,
-    };
-
-    const data = await executeScrape(tab.id, scrapeOptions);
-
-    return {
-      message: `采集完成，共 ${data.items.length} 条图片链接。`,
-      tone: 'success',
-      data,
-    };
   }
 
   function formatPinsForDisplay(pins) {
@@ -163,11 +183,11 @@
         tooltip: `达到上限或连续多次无新增图片时会自动停止滚动（默认 ${DEFAULT_MAX_COUNT}）。`,
       },
       {
-        key: 'uploadToCos',
-        label: '上传至 COS 并入库',
+        key: 'uploadToServer',
+        label: '上传到服务器',
         type: 'checkbox',
         defaultValue: true,
-        tooltip: '勾选后会将采集到的图片上传到腾讯云 COS，并同步写入服务器素材库。',
+        tooltip: '勾选后会将采集到的图片信息上传到服务器素材库（使用原始地址）。',
       },
       {
         key: 'sourceTag',
@@ -199,6 +219,9 @@
       const pins = formatPinsForDisplay(data.items);
       const container = ensureResultContainer(card);
       container.innerHTML = '';
+      // 优化容器样式，使UI更密集
+      container.style.padding = '10px'; // 减小内边距
+      container.style.gap = '8px'; // 减小间距
 
       if (!pins.length) {
         container.innerHTML = '<div class="feature-result-empty">未找到有效的图片链接。</div>';
@@ -212,6 +235,14 @@
 
       const header = document.createElement('div');
       header.className = 'feature-result-header';
+      header.style.fontSize = '11px'; // 减小字体
+      header.style.fontWeight = '500';
+      header.style.color = '#6c6c70';
+      header.style.display = 'flex';
+      header.style.justifyContent = 'space-between';
+      header.style.marginBottom = '8px'; // 减小间距
+      header.style.paddingBottom = '6px';
+      header.style.borderBottom = '1px solid rgba(0, 0, 0, 0.08)';
       const summaryParts = [`共 ${pins.length} 项`];
       if (report) {
         summaryParts.push(`成功 ${report.successCount || 0}`);
@@ -225,55 +256,95 @@
       pins.forEach((pin, index) => {
         const item = document.createElement('div');
         item.className = 'feature-result-item';
+        item.style.padding = '6px 0'; // 减小内边距，使UI更密集
+        item.style.borderBottom = '1px solid rgba(0, 0, 0, 0.05)';
 
         const thumb = document.createElement('div');
         thumb.className = 'feature-result-thumb';
+        thumb.style.width = '40px'; // 减小缩略图尺寸
+        thumb.style.height = '40px';
+        thumb.style.borderRadius = '6px';
         thumb.style.backgroundImage = pin.imageUrl ? `url('${pin.imageUrl}')` : '';
+        thumb.style.flexShrink = '0';
         item.appendChild(thumb);
 
         const body = document.createElement('div');
         body.className = 'feature-result-body';
+        body.style.flex = '1';
+        body.style.minWidth = '0';
+        body.style.display = 'flex';
+        body.style.flexDirection = 'column';
+        body.style.gap = '3px'; // 减小间距
 
+        const titleRow = document.createElement('div');
+        titleRow.style.display = 'flex';
+        titleRow.style.alignItems = 'center';
+        titleRow.style.gap = '6px';
+        
         const title = document.createElement('div');
         title.className = 'feature-result-title';
+        title.style.fontSize = '12px'; // 减小字体
+        title.style.fontWeight = '500';
+        title.style.color = '#1c1c1e';
+        title.style.flex = '1';
+        title.style.overflow = 'hidden';
+        title.style.textOverflow = 'ellipsis';
+        title.style.whiteSpace = 'nowrap';
         title.textContent = pin.title;
-        body.appendChild(title);
+        titleRow.appendChild(title);
 
         const meta = document.createElement('div');
         meta.className = 'feature-result-index';
+        meta.style.fontSize = '10px'; // 减小字体
+        meta.style.color = '#6c6c70';
+        meta.style.flexShrink = '0';
         meta.textContent = `#${index + 1}`;
-        body.appendChild(meta);
+        titleRow.appendChild(meta);
+        
+        body.appendChild(titleRow);
 
         const link = document.createElement('a');
         link.className = 'feature-result-link';
-        link.href =  pin.imageUrl;
+        link.href = pin.imageUrl;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
-        link.textContent =  pin.imageUrl;
+        link.style.fontSize = '10px'; // 减小字体
+        link.style.color = '#007aff';
+        link.style.wordBreak = 'break-all';
+        link.style.textDecoration = 'none';
+        link.style.lineHeight = '1.3';
+        link.style.maxHeight = '32px';
+        link.style.overflow = 'hidden';
+        link.style.display = '-webkit-box';
+        link.style.webkitLineClamp = '2';
+        link.style.webkitBoxOrient = 'vertical';
+        link.textContent = pin.imageUrl;
         body.appendChild(link);
 
         const reportEntry = reportMap.get(pin.id ?? pin.imageUrl);
         if (reportEntry) {
           const status = document.createElement('div');
           status.className = 'feature-result-status';
+          status.style.fontSize = '10px'; // 减小字体
+          status.style.marginTop = '2px';
           if (reportEntry.error) {
             status.classList.add('error');
-            status.textContent = `上传失败：${reportEntry.error}`;
+            status.style.color = '#f56c6c';
+            status.textContent = `失败：${reportEntry.error}`;
           } else {
             const fragments = [];
-            if (reportEntry.cosUrl) {
-              const cosLink = document.createElement('a');
-              cosLink.href = reportEntry.cosUrl;
-              cosLink.target = '_blank';
-              cosLink.rel = 'noopener noreferrer';
-              cosLink.textContent = 'COS 链接';
-              cosLink.className = 'feature-result-link';
-              fragments.push(cosLink);
-            }
             if (reportEntry.serverStatus) {
-              const span = document.createElement('span');
-              span.textContent = `服务器：${reportEntry.serverStatus}`;
-              fragments.push(span);
+              if (reportEntry.serverStatus === 'success') {
+                const span = document.createElement('span');
+                span.textContent = '✓ 已上传';
+                span.style.color = '#67c23a';
+                fragments.push(span);
+              } else if (reportEntry.serverStatus === 'failed') {
+                const span = document.createElement('span');
+                span.textContent = `✗ ${reportEntry.serverError || '上传失败'}`;
+                span.style.color = '#f56c6c';
+                fragments.push(span);
+              }
             }
             if (fragments.length) {
               status.classList.add('success');
@@ -286,7 +357,8 @@
                 status.appendChild(node);
               });
             } else {
-              status.textContent = '上传完成';
+              status.textContent = '✓ 完成';
+              status.style.color = '#67c23a';
               status.classList.add('success');
             }
           }
@@ -302,17 +374,16 @@
         context.setBusy(true);
         const result = await scrapePinterest(context, params);
 
-        const shouldUpload = Boolean(params?.uploadToCos || params?.notifyFeishu);
+        const shouldUpload = Boolean(params?.uploadToServer || params?.notifyFeishu);
         if (shouldUpload && result?.data?.items?.length) {
-          context.notify('采集完成，正在准备上传到 COS 与服务器…', { tone: 'info' });
-
+          context.notify('采集完成，正在准备上传到服务器…', { tone: 'info' });
+          
           try {
             const uploadResponse = await context.dispatchBackground({
               command: 'pinterest/upload',
               items: result.data.items,
               options: {
-                uploadToCos: Boolean(params.uploadToCos),
-                uploadToServer: Boolean(params.uploadToCos),
+                uploadToServer: Boolean(params.uploadToServer),
                 notifyFeishu: Boolean(params.notifyFeishu),
                 description: params.description || '',
                 source: params.sourceTag?.trim() || DEFAULT_SOURCE,
@@ -348,6 +419,11 @@
     if (!container) {
       container = document.createElement('div');
       container.className = 'feature-result';
+      // 设置更密集的样式
+      container.style.display = 'flex';
+      container.style.flexDirection = 'column';
+      container.style.gap = '8px';
+      container.style.padding = '10px';
       card.appendChild(container);
     }
     return container;

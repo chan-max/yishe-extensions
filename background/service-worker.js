@@ -1,5 +1,5 @@
 // service-worker.js: 后台服务 Worker
-/* global io, COS */
+/* global io */
 
 // 简单的日志函数（在 log 函数定义之前使用）
 function simpleLog(...args) {
@@ -8,7 +8,6 @@ function simpleLog(...args) {
 
 // 脚本加载状态
 let scriptsLoaded = {
-  cos: false,
   socketio: false,
   error: null
 };
@@ -16,27 +15,9 @@ let scriptsLoaded = {
 // 加载依赖库（不抛出错误，避免 service worker 崩溃）
 (function() {
   try {
-// 尝试加载 cos-js-sdk-v5 库（优先使用本地文件，如果没有则使用 CDN）
-try {
-      importScripts('../libs/cos-js-sdk-v5.main.js');
-      scriptsLoaded.cos = true;
-      simpleLog('COS SDK 已从本地文件加载');
-} catch (e) {
-  // 如果本地文件不存在，尝试从 CDN 加载
-      console.warn('[Core][WS] 本地 COS SDK 文件不存在，尝试从 CDN 加载...', e);
-      try {
-  importScripts('https://cdn.jsdelivr.net/npm/cos-js-sdk-v5@1.10.1/dist/cos-js-sdk-v5.min.js');
-        scriptsLoaded.cos = true;
-        simpleLog('COS SDK 已从 CDN 加载');
-      } catch (cdnError) {
-        console.error('[Core][WS] COS SDK CDN 加载失败:', cdnError);
-        scriptsLoaded.error = 'COS SDK 加载失败: ' + cdnError.message;
-      }
-    }
-
     // 加载 socket.io 客户端
     try {
-importScripts('../libs/socket.io.min.js');
+      importScripts('../libs/socket.io.min.js');
       scriptsLoaded.socketio = true;
       simpleLog('Socket.IO 已加载');
     } catch (e) {
@@ -58,52 +39,8 @@ const STORAGE_ENDPOINT_CUSTOM_KEY = 'wsEndpointCustom';
 const HEARTBEAT_INTERVAL = 15000;
 const HEARTBEAT_TIMEOUT = 10000;
 
-const COS_CONFIG = Object.freeze({
-  SecretId: 'AKIDMdmaMD0uiNwkVH0gTJFKXaXJyV4hHmAL',
-  SecretKey: 'HPdigqyzpgTNICCQnK0ZF6zrrpkbL4un',
-  Bucket: '1s-1257307499',
-  Region: 'ap-beijing',
-});
-
-// COS 客户端实例
-let cosClient = null;
-
-// 初始化 COS 客户端（参考 cos.ts 的实现）
-function initCOSClient() {
-  if (cosClient) {
-    return cosClient;
-  }
-
-  if (!scriptsLoaded.cos || typeof COS === 'undefined') {
-    const errorMsg = scriptsLoaded.error || 'COS SDK 未加载，请确保 cos-js-sdk-v5 库已正确导入';
-    log('COS SDK 初始化失败:', errorMsg);
-    throw new Error(errorMsg);
-  }
-
-  log('初始化 COS 客户端...');
-  cosClient = new COS({
-    SecretId: COS_CONFIG.SecretId,
-    SecretKey: COS_CONFIG.SecretKey,
-    Bucket: COS_CONFIG.Bucket,
-    Region: COS_CONFIG.Region,
-  });
-
-  log('COS 客户端初始化成功');
-  return cosClient;
-}
-
-// 获取 COS 客户端
-function getCOSClient() {
-  if (!cosClient) {
-    return initCOSClient();
-  }
-  return cosClient;
-}
 const SERVER_UPLOAD_URL = 'https://1s.design:1520/api/crawler/material/add';
 const FEISHU_WEBHOOK_URL = 'https://open.feishu.cn/open-apis/bot/v2/hook/4040ef7e-9776-4010-bf53-c30e4451b449';
-const COS_UPLOAD_PREFIX = 'crawler/pinterest';
-const COS_SIGN_TIME_OFFSET = 60; // seconds
-const COS_SIGN_TIME_WINDOW = 600; // seconds
 const textEncoder = new TextEncoder();
 
 const CLIENT_SOURCE = 'yishe-extension';
@@ -153,175 +90,6 @@ function serializeError(error) {
   }
 }
 
-function bufferToHex(buffer) {
-  return Array.from(new Uint8Array(buffer))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-function toUint8Array(input) {
-  if (input instanceof Uint8Array) return input;
-  if (input instanceof ArrayBuffer) return new Uint8Array(input);
-  return input;
-}
-
-async function sha1Hex(input) {
-  const data = typeof input === 'string' ? textEncoder.encode(input) : toUint8Array(input);
-  const hash = await crypto.subtle.digest('SHA-1', data);
-  return bufferToHex(hash);
-}
-
-async function hmacSha1(key, message) {
-  const keyData = typeof key === 'string' ? textEncoder.encode(key) : toUint8Array(key);
-  const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: { name: 'SHA-1' } }, false, ['sign']);
-  const data = typeof message === 'string' ? textEncoder.encode(message) : toUint8Array(message);
-  const signature = await crypto.subtle.sign('HMAC', cryptoKey, data);
-  return new Uint8Array(signature);
-}
-
-function encodeCosPath(pathname) {
-  // COS 路径编码规则：分段编码，保留斜杠
-  if (!pathname) return '/';
-  // 确保以 / 开头
-  const normalized = pathname.startsWith('/') ? pathname : '/' + pathname;
-  // 分段编码，但保留斜杠
-  return normalized
-    .split('/')
-    .map((segment) => segment ? encodeURIComponent(segment) : '')
-    .join('/');
-}
-
-function canonicalizeQuery(params = {}) {
-  const entries = Object.entries(params)
-    .filter(([key]) => key !== undefined && key !== null)
-    .map(([key, value]) => [String(key).toLowerCase(), value === undefined || value === null ? '' : String(value)]);
-  entries.sort((a, b) => a[0].localeCompare(b[0]));
-  if (!entries.length) {
-    return { paramList: '', paramString: '' };
-  }
-  const paramList = entries.map(([key]) => encodeURIComponent(key)).join(';');
-  const paramString = entries
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-    .join('&');
-  return { paramList, paramString };
-}
-
-function canonicalizeHeaders(headers = {}) {
-  const normalized = Object.entries(headers)
-    .filter(([key]) => key)
-    .map(([key, value]) => [String(key).toLowerCase(), (value ?? '').toString().trim()]);
-  if (!normalized.length) {
-    return { headerList: '', headerString: '' };
-  }
-  normalized.sort((a, b) => a[0].localeCompare(b[0]));
-  // headerList: 用于 q-header-list，需要对 key 进行 URL 编码，用分号连接
-  const headerList = normalized.map(([key]) => encodeURIComponent(key)).join(';');
-  // headerString: 用于 FormatString，格式为 key=value&key=value
-  // 根据腾讯云 COS 文档，key 和 value 都需要 URL 编码
-  const headerString = normalized
-    .map(([key, value]) => {
-      const encodedKey = encodeURIComponent(key);
-      const encodedValue = encodeURIComponent(value);
-      return `${encodedKey}=${encodedValue}`;
-    })
-    .join('&');
-  return { headerList, headerString };
-}
-
-function getSignTimeWindow() {
-  const now = Math.floor(Date.now() / 1000);
-  const start = Math.max(now - COS_SIGN_TIME_OFFSET, 0);
-  const end = now + COS_SIGN_TIME_WINDOW;
-  return `${start};${end}`;
-}
-
-async function generateCosAuthorization({ method, pathname, host, params = {}, headers: customHeaders = {} }) {
-  const methodLower = method.toLowerCase();
-  const signTime = getSignTimeWindow();
-  const keyTime = signTime;
-  const { paramList, paramString } = canonicalizeQuery(params);
-  
-  // 构建签名所需的请求头（只包含需要参与签名的头部）
-  const signHeaders = {
-    host: host.toLowerCase(),
-    ...customHeaders
-  };
-  
-  // 移除空值的头部
-  Object.keys(signHeaders).forEach(key => {
-    if (!signHeaders[key]) {
-      delete signHeaders[key];
-    }
-  });
-  
-  const { headerList, headerString } = canonicalizeHeaders(signHeaders);
-  
-  // 确保 pathname 以 / 开头（用于签名）
-  const normalizedPathname = pathname && pathname.startsWith('/') ? pathname : '/' + (pathname || '');
-  
-  // 重要：根据 COS 签名规范，FormatString 中的路径应该是原始路径（未编码）
-  // 但实际请求 URL 中的路径需要编码
-  // 这里使用原始路径进行签名
-  const signPath = normalizedPathname;
-  
-  // 构建格式字符串（必须严格按照格式：method\npathname\nparamString\nheaderString\n）
-  // 注意：pathname 使用原始路径，不是编码后的路径
-  // 确保格式正确：每个部分后面都有换行符，最后还有一个换行符
-  const formatString = `${methodLower}\n${signPath}\n${paramString}\n${headerString}\n`;
-  
-  // 计算格式字符串的 SHA1
-  const formatSha1 = await sha1Hex(formatString);
-  const stringToSign = `sha1\n${signTime}\n${formatSha1}\n`;
-  
-  // 详细日志输出
-  log('[COS Sign] === 签名调试信息 ===');
-  log('[COS Sign] 方法:', methodLower);
-  log('[COS Sign] 路径（原始，用于签名）:', signPath);
-  log('[COS Sign] 路径长度:', signPath.length);
-  log('[COS Sign] 参数字符串:', paramString || '(空)');
-  log('[COS Sign] 头部字符串:', headerString || '(空)');
-  log('[COS Sign] Header List:', headerList || '(空)');
-  log('[COS Sign] 格式字符串（十六进制）:', Array.from(new TextEncoder().encode(formatString)).map(b => b.toString(16).padStart(2, '0')).join(' '));
-  log('[COS Sign] 格式字符串（可见字符）:', formatString.replace(/\n/g, '\\n'));
-  log('[COS Sign] FormatString SHA1:', formatSha1);
-  log('[COS Sign] StringToSign:', stringToSign.replace(/\n/g, '\\n'));
-  log('[COS Sign] ====================');
-  
-  const signKeyBytes = await hmacSha1(COS_CONFIG.SecretKey, keyTime);
-  const signatureBytes = await hmacSha1(signKeyBytes, stringToSign);
-  const signature = bufferToHex(signatureBytes.buffer);
-  
-  const authorization = `q-sign-algorithm=sha1` +
-    `&q-ak=${COS_CONFIG.SecretId}` +
-    `&q-sign-time=${signTime}` +
-    `&q-key-time=${keyTime}` +
-    `&q-header-list=${headerList}` +
-    `&q-url-param-list=${paramList}` +
-    `&q-signature=${signature}`;
-  
-  log('[COS Sign] 签名:', authorization.substring(0, 100) + '...');
-  
-  return {
-    authorization,
-    signTime,
-  };
-}
-
-function buildCosHost() {
-  return `${COS_CONFIG.Bucket}.cos.${COS_CONFIG.Region}.myqcloud.com`;
-}
-
-function sanitizeFileName(name) {
-  if (!name) return 'item';
-  return name
-    .toString()
-    .toLowerCase()
-    .replace(/[^a-z0-9-_]+/g, '-')
-    .replace(/-{2,}/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 120) || 'item';
-}
-
 function guessExtension(url, contentType) {
   const fromUrl = (() => {
     try {
@@ -343,95 +111,6 @@ function guessExtension(url, contentType) {
   return '.jpg';
 }
 
-async function downloadImageAsBlob(url) {
-  const response = await fetch(url, {
-    method: 'GET',
-    mode: 'cors',
-    credentials: 'omit',
-  }).catch((error) => {
-    throw new Error(`下载图片失败: ${serializeError(error)}`);
-  });
-
-  if (!response || !response.ok) {
-    const status = response ? `${response.status} ${response.statusText}` : '网络错误';
-    throw new Error(`下载图片失败 (${status})`);
-  }
-
-  const contentType = response.headers.get('content-type') || '';
-  const blob = await response.blob();
-  return { blob, contentType, size: blob.size };
-}
-
-// 使用 fetch API 上传文件到 COS（Service Worker 环境，不支持 XMLHttpRequest）
-async function cosPutObject(key, blob) {
-  try {
-    log('[COS Upload] 开始上传文件到 COS...');
-    log('[COS Upload] Key:', key);
-    log('[COS Upload] Blob 类型:', typeof blob);
-    log('[COS Upload] Blob 大小:', blob?.size);
-    log('[COS Upload] Blob 名称:', blob?.name);
-
-    // 构建 COS 上传 URL
-    const host = buildCosHost();
-    // pathname 应该以 / 开头，不先编码
-    const pathname = '/' + (key.startsWith('/') ? key.slice(1) : key);
-    // 编码后的路径用于 URL
-    const encodedPath = encodeCosPath(pathname);
-    const url = `https://${host}${encodedPath}`;
-    
-    log('[COS Upload] 原始路径:', pathname);
-    log('[COS Upload] 编码路径:', encodedPath);
-    log('[COS Upload] 上传 URL:', url);
-
-    // 构建请求头（用于签名和请求）
-    const contentType = blob.type || 'application/octet-stream';
-    const contentLength = String(blob.size);
-    
-    // 注意：COS 签名规范中，如果请求头包含在 header-list 中，则必须参与签名
-    // 为了简化，我们先只包含 host，如果失败再添加其他头部
-    const { authorization } = await generateCosAuthorization({
-      method: 'PUT',
-      pathname: pathname, // 使用原始路径，函数内部会编码
-      host: host,
-      // 暂时不包含 content-type 和 content-length 在签名中，先测试
-      // 如果需要，可以添加：headers: { 'content-type': contentType }
-    });
-
-    log('[COS Upload] 签名已生成');
-
-    // 使用 fetch API 上传文件（使用编码后的路径）
-    // 注意：不要手动设置 Host 头，浏览器会自动设置
-    const response = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        'Authorization': authorization,
-        'Content-Type': contentType,
-        'Content-Length': contentLength,
-        // 不要设置 Host，浏览器会自动设置
-      },
-      body: blob,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      log('[COS Upload] 错误响应:', errorText);
-      throw new Error(`COS 上传失败: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-
-    log('[COS Upload] 上传成功');
-    
-    // 构建文件 URL（使用编码后的路径）
-    const fileUrl = `https://${host}${encodedPath}`;
-    
-    return {
-      key: key,
-      url: fileUrl,
-    };
-  } catch (error) {
-    log('[COS Upload] 上传失败:', serializeError(error));
-    throw new Error(`COS 上传失败: ${serializeError(error)}`);
-  }
-}
 
 async function uploadMaterialToServer(payload) {
   const response = await fetch(SERVER_UPLOAD_URL, {
@@ -475,14 +154,6 @@ async function sendFeishuNotification(lines) {
   });
 }
 
-function buildDatePath() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  return `${yyyy}/${mm}/${dd}`;
-}
-
 async function processPinterestUploadCommand(payload) {
   const items = Array.isArray(payload?.items) ? payload.items : [];
   const options = payload?.options || {};
@@ -490,6 +161,7 @@ async function processPinterestUploadCommand(payload) {
   const description = (options.description || '').trim();
   const source = (options.source || 'pinterest').trim() || 'pinterest';
   const pageInfo = options.page || null;
+  const uploadToServer = Boolean(options.uploadToServer);
 
   if (!items.length) {
     return {
@@ -517,32 +189,49 @@ async function processPinterestUploadCommand(payload) {
         throw new Error('缺少图片地址');
       }
 
-      log(`[Pinterest] 正在下载图片 ${index + 1}/${items.length}:`, item.imageUrl);
+      log(`[Pinterest] 正在处理图片 ${index + 1}/${items.length}:`, item.imageUrl);
 
-      // 只下载图片，不上传
-      const download = await downloadImageAsBlob(item.imageUrl);
-      const extension = guessExtension(item.imageUrl, download.contentType);
-      const baseName = sanitizeFileName(item?.id || `pin-${index + 1}`);
+      // 获取图片后缀
+      const extension = guessExtension(item.imageUrl, null);
+      const suffix = extension.replace('.', '').toLowerCase() || 'jpg';
 
-      // 将 Blob 转换为 base64 或创建 Blob URL（在 Service Worker 中）
-      // 由于 Service Worker 不能直接创建 Blob URL，我们需要转换为 base64
-      const base64 = await blobToBase64(download.blob);
-      
-      resultEntry.downloaded = true;
-      resultEntry.blobSize = download.size;
-      resultEntry.contentType = download.contentType;
-      resultEntry.extension = extension.replace('.', '').toLowerCase();
-      resultEntry.baseName = baseName;
-      resultEntry.dataUrl = `data:${download.contentType};base64,${base64}`;
-      resultEntry.meta = {
-        original: {
-          id: item?.id,
-          imageUrl: item?.imageUrl,
-          description: item?.description || item?.alt || '',
-        },
-        page: pageInfo,
-        collectedAt: payload?.collectedAt || new Date().toISOString(),
-      };
+      // 如果启用上传到服务器，则上传到 crawler 表
+      if (uploadToServer) {
+        try {
+          // 构建上传到服务器的 payload
+          const serverPayload = {
+            url: item.imageUrl, // 使用原始地址作为 url
+            originUrl: item.imageUrl, // 原始地址
+            name: item?.description || item?.alt || `Pinterest图片_${index + 1}`,
+            description: description || item?.description || item?.alt || '',
+            keywords: item?.description || item?.alt || '',
+            suffix: suffix,
+            source: source,
+            meta: {
+              original: {
+                id: item?.id,
+                imageUrl: item?.imageUrl,
+                description: item?.description || item?.alt || '',
+                url: item?.url , // Pinterest pin 页面链接
+              },
+              page: pageInfo,
+              collectedAt: payload?.collectedAt || new Date().toISOString(),
+            },
+          };
+
+          log(`[Pinterest] 正在上传到服务器 ${index + 1}/${items.length}`);
+          const serverResponse = await uploadMaterialToServer(serverPayload);
+          
+          resultEntry.serverStatus = 'success';
+          resultEntry.serverResponse = serverResponse;
+          log(`[Pinterest] 图片 ${index + 1} 上传到服务器成功`);
+        } catch (serverError) {
+          resultEntry.serverStatus = 'failed';
+          resultEntry.serverError = serializeError(serverError);
+          log(`[Pinterest] 图片 ${index + 1} 上传到服务器失败:`, resultEntry.serverError);
+          // 上传失败不影响整体流程，继续处理
+        }
+      }
 
       successCount += 1;
       log(`[Pinterest] 图片 ${index + 1} 处理成功`);
@@ -583,29 +272,15 @@ async function processPinterestUploadCommand(payload) {
     items: results,
     source,
     page: pageInfo,
-    message: `成功获取 ${successCount} 张图片${failCount > 0 ? `，${failCount} 张失败` : ''}`,
+    message: `成功处理 ${successCount} 张图片${failCount > 0 ? `，${failCount} 张失败` : ''}`,
   };
 
   if (failCount > 0) {
-    summary.error = '部分图片获取失败';
+    summary.error = '部分图片处理失败';
   }
 
   log('[Pinterest] 处理完成:', summary);
   return summary;
-}
-
-// 将 Blob 转换为 Base64（用于在 Service Worker 中传递图片数据）
-async function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      // base64 字符串（去掉 data:xxx;base64, 前缀）
-      const base64 = reader.result.split(',')[1];
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
 }
 
 async function handleControlFeatureExecute(request) {
