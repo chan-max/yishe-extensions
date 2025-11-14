@@ -97,26 +97,55 @@ function updateUI() {
   elements.reconnectBtn.disabled = !canReconnect;
 }
 
+// 从 storage 读取 WebSocket 状态（后备方案）
+function loadWsStatusFromStorage() {
+  chrome.storage.local.get(['wsStatus'], (result) => {
+    if (!chrome.runtime.lastError && result.wsStatus) {
+      console.log('[popup] loadWsStatusFromStorage: 从 storage 读取到状态:', result.wsStatus);
+      Object.assign(wsState, result.wsStatus);
+      updateUI();
+    }
+  });
+}
+
 // 获取 WebSocket 状态
 function fetchWsStatus() {
+  console.log('[popup] fetchWsStatus: 开始获取状态');
+  
+  // 先从 storage 读取状态（快速显示）
+  loadWsStatusFromStorage();
+  
+  // 然后从 service worker 获取最新状态
   chrome.runtime.sendMessage({ action: 'getWebsocketStatus' }, (response) => {
+    console.log('[popup] fetchWsStatus: 收到响应:', response);
+    console.log('[popup] fetchWsStatus: runtime.lastError:', chrome.runtime.lastError);
+    
     elements.loading.style.display = 'none';
     elements.wsStatusContent.style.display = 'block';
     
     if (chrome.runtime.lastError) {
+      console.error('[popup] fetchWsStatus: 错误:', chrome.runtime.lastError.message);
+      // 如果有 storage 中的数据，就不显示错误
+      if (!wsState.endpoint || wsState.status === 'disconnected') {
       wsState.status = 'error';
       wsState.lastError = chrome.runtime.lastError.message;
       updateUI();
+      }
       return;
     }
     
     if (response && response.success && response.data) {
+      console.log('[popup] fetchWsStatus: 更新状态:', response.data);
       Object.assign(wsState, response.data);
       updateUI();
     } else {
+      console.error('[popup] fetchWsStatus: 响应无效:', response);
+      // 如果有 storage 中的数据，就不显示错误
+      if (!wsState.endpoint || wsState.status === 'disconnected') {
       wsState.status = 'error';
       wsState.lastError = response?.error || '无法获取连接状态';
       updateUI();
+      }
         }
       });
     }
@@ -248,19 +277,29 @@ function setupMessageListener() {
     
     if (message && message.type === 'wsStatus:update') {
       console.log('[popup] onMessage: 处理 wsStatus:update');
+      console.log('[popup] onMessage: 状态数据:', message.payload);
+      if (message.payload) {
       Object.assign(wsState, message.payload);
       updateUI();
+        console.log('[popup] onMessage: 状态已更新');
+      }
+      // 发送响应确认收到消息
+      if (sendResponse) {
+        sendResponse({ success: true });
+      }
     } else if (message && message.type === 'adminMessage:received') {
       console.log('[popup] onMessage: 收到 adminMessage:received 通知');
       console.log('[popup] onMessage: 消息载荷:', message.payload);
       // 收到新消息，重新加载消息列表
       loadAdminMessages();
+      if (sendResponse) {
       sendResponse({ success: true });
+      }
     } else {
       console.log('[popup] onMessage: 未知消息类型，忽略');
     }
     
-    return true; // 保持消息通道开放
+    return true; // 保持消息通道开放（异步响应）
   });
   console.log('[popup] setupMessageListener: 消息监听器设置完成');
 }
