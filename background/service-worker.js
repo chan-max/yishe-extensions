@@ -29,6 +29,7 @@ let scriptsLoaded = {
     try {
       importScripts('handlers/base.js');
       importScripts('handlers/pinterest.js');
+      importScripts('handlers/sora.js');
       importScripts('handlers/index.js');
       simpleLog('消息处理器已加载');
     } catch (e) {

@@ -79,6 +79,9 @@
   if (global.MessageHandlers?.Pinterest) {
     registerHandler('pinterest/scrape', global.MessageHandlers.Pinterest);
   }
+  if (global.MessageHandlers?.Sora) {
+    registerHandler('sora/scrape', global.MessageHandlers.Sora);
+  }
 
   // 暴露到全局
   global.MessageHandlers = global.MessageHandlers || {};
