@@ -517,7 +517,35 @@ function cloneMetadata(metadata) {
   }
 }
 
-function buildConnectionQuery(metadata) {
+function mergeMetadataWithAuth(metadata, token, userInfo) {
+  if (!metadata) {
+    return metadata;
+  }
+
+  const merged = { ...metadata };
+
+  if (token) {
+    merged.auth = {
+      ...(merged.auth || {}),
+      token,
+    };
+  } else if (merged.auth) {
+    delete merged.auth.token;
+    if (Object.keys(merged.auth).length === 0) {
+      delete merged.auth;
+    }
+  }
+
+  if (userInfo) {
+    merged.user = userInfo;
+  } else if (merged.user) {
+    delete merged.user;
+  }
+
+  return merged;
+}
+
+function buildConnectionQuery(metadata, token) {
   const query = {
     [CLIENT_SOURCE_QUERY_KEY]: CLIENT_SOURCE,
   };
@@ -527,6 +555,9 @@ function buildConnectionQuery(metadata) {
   }
   if (metadata?.clientId) {
     query[CLIENT_ID_QUERY_KEY] = metadata.clientId;
+  }
+  if (token) {
+    query.token = token;
   }
   if (metadata) {
     try {
@@ -774,8 +805,18 @@ async function initWebsocket() {
     return;
   }
 
-  const metadata = await ensureClientMetadata();
-  const query = buildConnectionQuery(metadata);
+  const [metadata, authState] = await Promise.all([
+    ensureClientMetadata(),
+    storageGet([AUTH_TOKEN_KEY, AUTH_USER_INFO_KEY]),
+  ]);
+  const token = authState[AUTH_TOKEN_KEY];
+  const userInfo = authState[AUTH_USER_INFO_KEY];
+  const enrichedMetadata = mergeMetadataWithAuth(metadata, token, userInfo);
+  const query = buildConnectionQuery(enrichedMetadata, token);
+  if (enrichedMetadata) {
+    clientMetadata = enrichedMetadata;
+    updateWsState({ clientInfo: cloneMetadata(enrichedMetadata) });
+  }
 
   stopHeartbeatTimers();
   cleanupSocket();
@@ -796,6 +837,11 @@ async function initWebsocket() {
     reconnectionDelayMax: 15000,
     timeout: 8000,
     query,
+    auth: token
+      ? {
+          token,
+        }
+      : undefined,
   });
 
   socket.on('connect', () => {
