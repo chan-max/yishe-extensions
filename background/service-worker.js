@@ -63,6 +63,8 @@ const CLIENT_ID_QUERY_KEY = 'clientId';
 const LOCATION_CACHE_KEY = 'wsLocationCache';
 const LOCATION_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 const LOCATION_ENDPOINT = 'https://ipapi.co/json/';
+const AUTH_TOKEN_KEY = 'accessToken';
+const AUTH_USER_INFO_KEY = 'userInfo';
 
 let clientMetadata = null;
 let clientMetadataPromise = null;
@@ -73,6 +75,7 @@ let socket = null;
 let heartbeatTimer = null;
 let heartbeatTimeoutTimer = null;
 let lastPingTimestampMs = null;
+let websocketInitPromise = null;
 
 const wsState = {
   status: 'disconnected',
@@ -337,6 +340,11 @@ function storageSet(data) {
       }
     });
   });
+}
+
+async function hasAuthenticatedSession() {
+  const authState = await storageGet([AUTH_TOKEN_KEY, AUTH_USER_INFO_KEY]);
+  return Boolean(authState[AUTH_TOKEN_KEY] && authState[AUTH_USER_INFO_KEY]);
 }
 
 async function ensureClientIdentifier() {
@@ -709,6 +717,17 @@ function stopHeartbeatTimers() {
   clearHeartbeatTimeout();
 }
 
+function disconnectWebsocket(reason) {
+  stopHeartbeatTimers();
+  cleanupSocket();
+  updateWsState({
+    status: 'disconnected',
+    connectedAt: null,
+    lastError: reason || null,
+    retryCount: 0,
+  });
+}
+
 function scheduleHeartbeatTimeout() {
   clearHeartbeatTimeout();
   heartbeatTimeoutTimer = setTimeout(() => {
@@ -881,6 +900,44 @@ async function initWebsocket() {
   });
 }
 
+async function connectWebsocketIfAuthenticated(context = 'manual') {
+  const hasSession = await hasAuthenticatedSession();
+  if (!hasSession) {
+    log(`[WS] ${context}: 未检测到登录信息，暂不建立连接`);
+    disconnectWebsocket('等待登录');
+    return false;
+  }
+
+  if (socket && socket.connected) {
+    log(`[WS] ${context}: WebSocket 已连接，跳过重复连接`);
+    return true;
+  }
+
+  if (wsState.status === 'connecting' || wsState.status === 'reconnecting') {
+    log(`[WS] ${context}: WebSocket 正在连接中，跳过重复触发`);
+    return true;
+  }
+
+  if (websocketInitPromise) {
+    log(`[WS] ${context}: 已有连接任务进行中，等待完成`);
+    await websocketInitPromise;
+    return true;
+  }
+
+  log(`[WS] ${context}: 检测到登录信息完备，开始连接 WebSocket`);
+  websocketInitPromise = initWebsocket()
+    .catch((error) => {
+      log(`[WS] ${context}: 初始化 WebSocket 失败`, serializeError(error));
+      throw error;
+    })
+    .finally(() => {
+      websocketInitPromise = null;
+    });
+
+  await websocketInitPromise;
+  return true;
+}
+
 function handleAdminMessage(data) {
   log('[handleAdminMessage] 开始处理管理员消息');
   log('[handleAdminMessage] 输入数据:', data);
@@ -1048,8 +1105,10 @@ function setEndpoint(newEndpoint, callback) {
       log('WebSocket 端点已更新为:', wsEndpoint, '(custom:', isCustom, ')');
       if (socket) {
         log('端点变更，重新初始化连接');
-        initWebsocket();
       }
+      connectWebsocketIfAuthenticated('update-endpoint').catch((error) => {
+        log('[WS] update-endpoint: 重新连接失败', serializeError(error));
+      });
       if (typeof callback === 'function') {
         callback(null);
       }
@@ -1101,7 +1160,10 @@ async function initialize() {
     prefetchLocationInfo();
     // 初始化前先广播一次状态（确保 popup 能获取到初始状态）
     broadcastWsState();
-    await initWebsocket();
+    const connected = await connectWebsocketIfAuthenticated('initialize');
+    if (!connected) {
+      log('[WS] initialize: 未登录，等待登录信息后再连接');
+    }
     // 初始化后再次广播状态（确保状态已更新）
     broadcastWsState();
     // 恢复 Pinterest 定时任务
@@ -1148,6 +1210,20 @@ chrome.runtime.onInstalled.addListener(() => {
   } catch (error) {
     log('onInstalled 处理失败:', serializeError(error));
   }
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') {
+    return;
+  }
+  const tokenChanged = Object.prototype.hasOwnProperty.call(changes, AUTH_TOKEN_KEY);
+  const userInfoChanged = Object.prototype.hasOwnProperty.call(changes, AUTH_USER_INFO_KEY);
+  if (!tokenChanged && !userInfoChanged) {
+    return;
+  }
+  connectWebsocketIfAuthenticated('auth-state-change').catch((error) => {
+    log('[WS] auth-state-change: 处理失败', serializeError(error));
+  });
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -1212,8 +1288,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'reconnectWebsocket') {
-    initWebsocket();
-    sendResponse({ success: true });
+    connectWebsocketIfAuthenticated('manual-reconnect')
+      .then(() => sendResponse({ success: true }))
+      .catch((error) => sendResponse({ success: false, error: serializeError(error) }));
     return true;
   }
 

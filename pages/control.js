@@ -1,20 +1,64 @@
 ;(function () {
   const registry = window.ControlFeatureRegistry;
+  const API_UTILS_SCRIPT_ID = 'yishe-api-utils-script';
+  let apiUtilsPromise = null;
+
+  function getApiScriptUrl() {
+    return chrome?.runtime?.getURL('utils/api.js') || '../utils/api.js';
+  }
+
+  async function ensureApiUtils() {
+    if (window.ApiUtils) {
+      return window.ApiUtils;
+    }
+    if (!apiUtilsPromise) {
+      apiUtilsPromise = new Promise((resolve, reject) => {
+        let script = document.getElementById(API_UTILS_SCRIPT_ID);
+        const resolveWithUtils = () => resolve(window.ApiUtils);
+        const rejectWithError = (event) =>
+          reject(event?.error || new Error('ApiUtils 加载失败'));
+
+        if (!script) {
+          script = document.createElement('script');
+          script.id = API_UTILS_SCRIPT_ID;
+          script.src = getApiScriptUrl();
+          script.onload = () => {
+            script.dataset.loaded = 'true';
+            resolveWithUtils();
+          };
+          script.onerror = rejectWithError;
+          document.head.appendChild(script);
+          return;
+        }
+
+        if (script.dataset.loaded === 'true' && window.ApiUtils) {
+          resolveWithUtils();
+          return;
+        }
+
+        script.addEventListener('load', () => {
+          script.dataset.loaded = 'true';
+          resolveWithUtils();
+        }, { once: true });
+        script.addEventListener('error', rejectWithError, { once: true });
+      }).catch((error) => {
+        apiUtilsPromise = null;
+        throw error;
+      });
+    }
+
+    const utils = await apiUtilsPromise;
+    if (window.ApiUtils) {
+      apiUtilsPromise = null;
+      return window.ApiUtils;
+    }
+    throw new Error('ApiUtils 未加载');
+  }
 
   // 加载用户信息
   async function loadUserInfo() {
     try {
-      // 动态加载 API 工具
-      const script = document.createElement('script');
-      script.src = chrome.runtime.getURL('utils/api.js');
-      document.head.appendChild(script);
-      
-      await new Promise((resolve) => {
-        script.onload = resolve;
-        setTimeout(resolve, 100);
-      });
-      
-      const ApiUtils = window.ApiUtils;
+      const ApiUtils = await ensureApiUtils();
       if (!ApiUtils) {
         console.error('[control] ApiUtils 未加载');
         return;
@@ -36,11 +80,11 @@
         if (userInfoControl) userInfoControl.style.display = 'block';
         if (loginPromptControl) loginPromptControl.style.display = 'none';
         
-        if (userNameControl && userInfo.username) {
-          userNameControl.textContent = userInfo.username;
+        if (userNameControl && userInfo.name) {
+          userNameControl.textContent = userInfo.name;
         }
-        if (userAvatarControl && userInfo.username) {
-          userAvatarControl.textContent = userInfo.username.charAt(0).toUpperCase();
+        if (userAvatarControl && userInfo.name) {
+          userAvatarControl.textContent = userInfo.name.charAt(0).toUpperCase();
         }
         if (userRoleControl && userInfo.nickname) {
           userRoleControl.textContent = userInfo.nickname;
@@ -78,7 +122,6 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     setupNavigation();
-    setupOpenPopup();
     setupFeatureBoard();
     loadUserInfo();
   });
@@ -92,25 +135,6 @@
         navItems.forEach((nav) => nav.classList.remove('active'));
         item.classList.add('active');
       });
-    });
-  }
-
-  function setupOpenPopup() {
-    const openPopupBtn = document.getElementById('control-open-popup');
-    if (!openPopupBtn) return;
-
-    openPopupBtn.addEventListener('click', () => {
-      try {
-        const popupUrl = chrome?.runtime?.getURL('popup/popup.html') || '../popup/popup.html';
-        if (chrome?.tabs?.create) {
-          chrome.tabs.create({ url: popupUrl });
-        } else {
-          window.open(popupUrl, '_blank');
-        }
-      } catch (error) {
-        console.warn('[control] 无法调用 chrome.tabs.create，将尝试直接打开页面', error);
-        window.open('../popup/popup.html', '_blank');
-      }
     });
   }
 

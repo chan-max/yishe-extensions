@@ -138,6 +138,22 @@ async function clearUserInfo() {
   await storageSet({ [STORAGE_KEYS.USER_INFO]: null });
 }
 
+function normalizeApiResponse(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return raw;
+  }
+  const hasData = Object.prototype.hasOwnProperty.call(raw, 'data');
+  const hasEnvelopeMeta =
+    Object.prototype.hasOwnProperty.call(raw, 'code') ||
+    Object.prototype.hasOwnProperty.call(raw, 'status') ||
+    Object.prototype.hasOwnProperty.call(raw, 'msg') ||
+    Object.prototype.hasOwnProperty.call(raw, 'message');
+  if (hasData && hasEnvelopeMeta) {
+    return raw.data;
+  }
+  return raw;
+}
+
 // API 请求函数
 async function apiRequest(url, options = {}) {
   const baseUrl = await getApiBaseUrl();
@@ -183,7 +199,8 @@ async function apiRequest(url, options = {}) {
   
   const contentType = response.headers.get('content-type');
   if (contentType && contentType.includes('application/json')) {
-    return await response.json();
+    const json = await response.json();
+    return normalizeApiResponse(json);
   }
   
   return await response.text();
@@ -218,7 +235,7 @@ async function login(username, password, rememberMe = false) {
     throw new Error(errorData.message || errorData.msg || `登录失败: HTTP ${response.status}`);
   }
   
-  const data = await response.json();
+  const data = normalizeApiResponse(await response.json());
   
   if (!data || !data.token) {
     throw new Error('登录响应中未找到 token');
@@ -241,12 +258,12 @@ async function fetchUserInfo() {
       body: JSON.stringify({}),
     });
     
-    if (data && data.data) {
-      await setUserInfo(data.data);
-      return data.data;
+    if (data) {
+      await setUserInfo(data);
+      return data;
     }
     
-    throw new Error('获取用户信息失败：响应格式错误');
+    throw new Error('获取用户信息失败：响应为空');
   } catch (error) {
     console.error('获取用户信息失败:', error);
     // 如果获取用户信息失败，清除 token

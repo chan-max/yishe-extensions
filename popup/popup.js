@@ -304,20 +304,65 @@ function setupMessageListener() {
   console.log('[popup] setupMessageListener: 消息监听器设置完成');
 }
 
+const API_UTILS_SCRIPT_ID = 'yishe-api-utils-script';
+let apiUtilsPromise = null;
+
+function getApiScriptUrl() {
+  return chrome?.runtime?.getURL('utils/api.js') || '../utils/api.js';
+}
+
+async function ensureApiUtils() {
+  if (window.ApiUtils) {
+    return window.ApiUtils;
+  }
+  if (!apiUtilsPromise) {
+    apiUtilsPromise = new Promise((resolve, reject) => {
+      let script = document.getElementById(API_UTILS_SCRIPT_ID);
+      const resolveWithUtils = () => resolve(window.ApiUtils);
+      const rejectWithError = (event) =>
+        reject(event?.error || new Error('ApiUtils 加载失败'));
+
+      if (!script) {
+        script = document.createElement('script');
+        script.id = API_UTILS_SCRIPT_ID;
+        script.src = getApiScriptUrl();
+        script.onload = () => {
+          script.dataset.loaded = 'true';
+          resolveWithUtils();
+        };
+        script.onerror = rejectWithError;
+        document.head.appendChild(script);
+        return;
+      }
+
+      if (script.dataset.loaded === 'true' && window.ApiUtils) {
+        resolveWithUtils();
+        return;
+      }
+
+      script.addEventListener('load', () => {
+        script.dataset.loaded = 'true';
+        resolveWithUtils();
+      }, { once: true });
+      script.addEventListener('error', rejectWithError, { once: true });
+    }).catch((error) => {
+      apiUtilsPromise = null;
+      throw error;
+    });
+  }
+
+  const utils = await apiUtilsPromise;
+  if (window.ApiUtils) {
+    apiUtilsPromise = null;
+    return window.ApiUtils;
+  }
+  throw new Error('ApiUtils 未加载');
+}
+
 // 加载用户信息
 async function loadUserInfo() {
   try {
-    // 动态加载 API 工具
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('utils/api.js');
-    document.head.appendChild(script);
-    
-    await new Promise((resolve) => {
-      script.onload = resolve;
-      setTimeout(resolve, 100);
-    });
-    
-    const ApiUtils = window.ApiUtils;
+    const ApiUtils = await ensureApiUtils();
     if (!ApiUtils) {
       console.error('[popup] ApiUtils 未加载');
       return;
@@ -339,11 +384,11 @@ async function loadUserInfo() {
       if (userInfoSection) userInfoSection.style.display = 'block';
       if (loginPrompt) loginPrompt.style.display = 'none';
       
-      if (userName && userInfo.username) {
-        userName.textContent = userInfo.username;
+      if (userName && userInfo.name) {
+        userName.textContent = userInfo.name;
       }
-      if (userAvatar && userInfo.username) {
-        userAvatar.textContent = userInfo.username.charAt(0).toUpperCase();
+      if (userAvatar && userInfo.name) {
+        userAvatar.textContent = userInfo.name.charAt(0).toUpperCase();
       }
       if (userRole && userInfo.nickname) {
         userRole.textContent = userInfo.nickname;
