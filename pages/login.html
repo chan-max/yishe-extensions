@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登录 - YiShe 插件系统</title>
+  <link rel="stylesheet" href="../popup/popup.css">
+  <link rel="icon" href="data:,">
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval' 'inline-speculation-rules'; object-src 'self'">
+  <meta http-equiv="Permissions-Policy" content="interest-cohort=()">
+</head>
+<body class="login-page">
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo">Yi</div>
+        <h1 class="login-title">YiShe 插件系统</h1>
+        <p class="login-subtitle">请登录以使用完整功能</p>
+      </div>
+
+      <form id="login-form" class="login-form">
+        <div class="form-group">
+          <label for="username">用户名</label>
+          <input 
+            type="text" 
+            id="username" 
+            name="username" 
+            placeholder="请输入用户名"
+            required
+            autocomplete="username"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="password">密码</label>
+          <input 
+            type="password" 
+            id="password" 
+            name="password" 
+            placeholder="请输入密码"
+            required
+            autocomplete="current-password"
+          >
+        </div>
+
+        <div class="form-group checkbox-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="rememberMe" name="rememberMe">
+            <span>记住我</span>
+          </label>
+        </div>
+
+        <div id="login-error" class="login-error" style="display: none;"></div>
+
+        <button type="submit" id="login-btn" class="login-btn">
+          <span id="login-btn-text">登录</span>
+          <span id="login-btn-loading" style="display: none;">登录中...</span>
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <div class="dev-mode-toggle">
+          <label class="toggle-label">
+            <input type="checkbox" id="dev-mode-toggle">
+            <span>开发模式</span>
+          </label>
+          <div id="dev-mode-info" class="dev-mode-info" style="display: none;">
+            <div class="dev-mode-item">
+              <span class="dev-mode-label">API:</span>
+              <span id="dev-api-url" class="dev-mode-value"></span>
+            </div>
+            <div class="dev-mode-item">
+              <span class="dev-mode-label">WebSocket:</span>
+              <span id="dev-ws-url" class="dev-mode-value"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="login.js"></script>
+</body>
+</html>
+

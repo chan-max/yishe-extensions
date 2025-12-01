@@ -10,6 +10,20 @@
   <div class="popup-container">
     <header class="popup-header">
       <div class="header-title">1s 插件系统</div>
+      <div id="user-info-section" class="user-info-section" style="display: none;">
+        <div class="user-info">
+          <div class="user-info-avatar" id="user-avatar">U</div>
+          <div class="user-info-text">
+            <div class="user-info-name" id="user-name">用户</div>
+            <div class="user-info-role" id="user-role">未登录</div>
+          </div>
+          <button id="logout-btn" class="logout-btn">退出</button>
+        </div>
+      </div>
+      <div id="login-prompt" class="login-prompt" style="display: none;">
+        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">请先登录以使用完整功能</p>
+        <button id="login-btn" class="login-prompt-btn">前往登录</button>
+      </div>
     </header>
 
     <main class="popup-content">

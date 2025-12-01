@@ -41,7 +41,8 @@
     {
       "resources": [
         "content/sites/common.js",
-        "content/sites/*/index.js"
+        "content/sites/*/index.js",
+        "utils/api.js"
       ],
       "matches": ["<all_urls>"]
     }

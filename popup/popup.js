@@ -304,6 +304,84 @@ function setupMessageListener() {
   console.log('[popup] setupMessageListener: 消息监听器设置完成');
 }
 
+// 加载用户信息
+async function loadUserInfo() {
+  try {
+    // 动态加载 API 工具
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('utils/api.js');
+    document.head.appendChild(script);
+    
+    await new Promise((resolve) => {
+      script.onload = resolve;
+      setTimeout(resolve, 100);
+    });
+    
+    const ApiUtils = window.ApiUtils;
+    if (!ApiUtils) {
+      console.error('[popup] ApiUtils 未加载');
+      return;
+    }
+    
+    const token = await ApiUtils.getToken();
+    const userInfo = await ApiUtils.getUserInfo();
+    
+    const userInfoSection = document.getElementById('user-info-section');
+    const loginPrompt = document.getElementById('login-prompt');
+    const userAvatar = document.getElementById('user-avatar');
+    const userName = document.getElementById('user-name');
+    const userRole = document.getElementById('user-role');
+    const logoutBtn = document.getElementById('logout-btn');
+    const loginBtn = document.getElementById('login-btn');
+    
+    if (token && userInfo) {
+      // 已登录，显示用户信息
+      if (userInfoSection) userInfoSection.style.display = 'block';
+      if (loginPrompt) loginPrompt.style.display = 'none';
+      
+      if (userName && userInfo.username) {
+        userName.textContent = userInfo.username;
+      }
+      if (userAvatar && userInfo.username) {
+        userAvatar.textContent = userInfo.username.charAt(0).toUpperCase();
+      }
+      if (userRole && userInfo.nickname) {
+        userRole.textContent = userInfo.nickname;
+      } else if (userRole) {
+        userRole.textContent = '已登录';
+      }
+      
+      if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+          try {
+            await ApiUtils.logout();
+            // 刷新页面显示
+            loadUserInfo();
+          } catch (error) {
+            console.error('[popup] 登出失败:', error);
+          }
+        });
+      }
+    } else {
+      // 未登录，显示登录提示
+      if (userInfoSection) userInfoSection.style.display = 'none';
+      if (loginPrompt) loginPrompt.style.display = 'block';
+      
+      if (loginBtn) {
+        loginBtn.addEventListener('click', () => {
+          const loginUrl = chrome.runtime.getURL('pages/login.html');
+          chrome.tabs.create({ url: loginUrl });
+          try {
+            window.close();
+          } catch {}
+        });
+      }
+    }
+  } catch (error) {
+    console.error('[popup] 加载用户信息失败:', error);
+  }
+}
+
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
   console.log('[popup] DOMContentLoaded: 开始初始化');
@@ -315,6 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   setupMessageListener();
   fetchWsStatus();
+  loadUserInfo();
 
   // 仅当存在消息容器时才加载消息
   if (elements.adminMessagesList && elements.adminMessagesEmpty) {

@@ -1,10 +1,86 @@
 ;(function () {
   const registry = window.ControlFeatureRegistry;
 
+  // 加载用户信息
+  async function loadUserInfo() {
+    try {
+      // 动态加载 API 工具
+      const script = document.createElement('script');
+      script.src = chrome.runtime.getURL('utils/api.js');
+      document.head.appendChild(script);
+      
+      await new Promise((resolve) => {
+        script.onload = resolve;
+        setTimeout(resolve, 100);
+      });
+      
+      const ApiUtils = window.ApiUtils;
+      if (!ApiUtils) {
+        console.error('[control] ApiUtils 未加载');
+        return;
+      }
+      
+      const token = await ApiUtils.getToken();
+      const userInfo = await ApiUtils.getUserInfo();
+      
+      const userInfoControl = document.getElementById('user-info-control');
+      const loginPromptControl = document.getElementById('login-prompt-control');
+      const userAvatarControl = document.getElementById('user-avatar-control');
+      const userNameControl = document.getElementById('user-name-control');
+      const userRoleControl = document.getElementById('user-role-control');
+      const logoutBtnControl = document.getElementById('logout-btn-control');
+      const loginBtnControl = document.getElementById('login-btn-control');
+      
+      if (token && userInfo) {
+        // 已登录，显示用户信息
+        if (userInfoControl) userInfoControl.style.display = 'block';
+        if (loginPromptControl) loginPromptControl.style.display = 'none';
+        
+        if (userNameControl && userInfo.username) {
+          userNameControl.textContent = userInfo.username;
+        }
+        if (userAvatarControl && userInfo.username) {
+          userAvatarControl.textContent = userInfo.username.charAt(0).toUpperCase();
+        }
+        if (userRoleControl && userInfo.nickname) {
+          userRoleControl.textContent = userInfo.nickname;
+        } else if (userRoleControl) {
+          userRoleControl.textContent = '已登录';
+        }
+        
+        if (logoutBtnControl) {
+          logoutBtnControl.addEventListener('click', async () => {
+            try {
+              await ApiUtils.logout();
+              // 刷新页面显示
+              loadUserInfo();
+            } catch (error) {
+              console.error('[control] 登出失败:', error);
+            }
+          });
+        }
+      } else {
+        // 未登录，显示登录提示
+        if (userInfoControl) userInfoControl.style.display = 'none';
+        if (loginPromptControl) loginPromptControl.style.display = 'block';
+        
+        if (loginBtnControl) {
+          loginBtnControl.addEventListener('click', () => {
+            const loginUrl = chrome.runtime.getURL('pages/login.html');
+            window.location.href = loginUrl;
+          });
+        }
+      }
+    } catch (error) {
+      console.error('[control] 加载用户信息失败:', error);
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     setupNavigation();
     setupOpenPopup();
     setupFeatureBoard();
+    loadUserInfo();
   });
 
   function setupNavigation() {
