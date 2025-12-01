@@ -58,9 +58,9 @@ function updateUI() {
   elements.statusDot.className = `status-dot ${status.dotClass}`;
   elements.wsStatusLabel.textContent = status.text;
   
-  // 更新端点
-  elements.wsStatusEndpoint.textContent = wsState.endpoint || '未配置';
-  elements.wsStatusEndpoint.title = wsState.endpoint || '未配置';
+  // 更新端点（隐藏实际地址，仅显示状态）
+  elements.wsStatusEndpoint.textContent = wsState.endpoint ? '已配置' : '未配置';
+  elements.wsStatusEndpoint.title = 'WebSocket 连接已配置';
   
   // 更新元数据
   const hasMeta = wsState.lastPingAt || wsState.lastPongAt || wsState.lastLatencyMs;
@@ -359,6 +359,56 @@ async function ensureApiUtils() {
   throw new Error('ApiUtils 未加载');
 }
 
+// 跳转到登录页面
+function redirectToLogin() {
+  const loginUrl = chrome.runtime.getURL('pages/login.html');
+  chrome.tabs.create({ url: loginUrl });
+  try {
+    window.close();
+  } catch {}
+}
+
+// 检查用户身份是否有效
+async function checkUserAuth() {
+  try {
+    const ApiUtils = await ensureApiUtils();
+    if (!ApiUtils) {
+      console.error('[popup] ApiUtils 未加载');
+      redirectToLogin();
+      return false;
+    }
+    
+    const token = await ApiUtils.getToken();
+    if (!token) {
+      // 没有 token，跳转到登录页面
+      redirectToLogin();
+      return false;
+    }
+    
+    // 调用 getUserInfo 验证 token 是否有效
+    try {
+      await ApiUtils.fetchUserInfo();
+      return true;
+    } catch (error) {
+      console.error('[popup] 验证用户身份失败:', error);
+      // 如果是 401 错误，说明 token 失效，清除本地数据并跳转
+      if (error.status === 401 || (error.message && (error.message.includes('401') || error.message.includes('Unauthorized')))) {
+        await ApiUtils.clearToken();
+        await ApiUtils.clearUserInfo();
+        redirectToLogin();
+        return false;
+      }
+      // 其他错误也跳转，确保安全
+      redirectToLogin();
+      return false;
+    }
+  } catch (error) {
+    console.error('[popup] 检查用户身份失败:', error);
+    redirectToLogin();
+    return false;
+  }
+}
+
 // 加载用户信息
 async function loadUserInfo() {
   try {
@@ -400,10 +450,14 @@ async function loadUserInfo() {
         logoutBtn.addEventListener('click', async () => {
           try {
             await ApiUtils.logout();
-            // 刷新页面显示
-            loadUserInfo();
+            // 退出登录后跳转到登录页面
+            redirectToLogin();
           } catch (error) {
             console.error('[popup] 登出失败:', error);
+            // 即使登出失败，也清除本地数据并跳转
+            await ApiUtils.clearToken();
+            await ApiUtils.clearUserInfo();
+            redirectToLogin();
           }
         });
       }
@@ -414,11 +468,7 @@ async function loadUserInfo() {
       
       if (loginBtn) {
         loginBtn.addEventListener('click', () => {
-          const loginUrl = chrome.runtime.getURL('pages/login.html');
-          chrome.tabs.create({ url: loginUrl });
-          try {
-            window.close();
-          } catch {}
+          redirectToLogin();
         });
       }
     }
@@ -428,13 +478,20 @@ async function loadUserInfo() {
 }
 
 // 初始化
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   console.log('[popup] DOMContentLoaded: 开始初始化');
   console.log('[popup] DOMContentLoaded: 检查 DOM 元素:', {
     adminMessagesList: !!elements.adminMessagesList,
     adminMessagesEmpty: !!elements.adminMessagesEmpty,
     clearMessagesBtn: !!elements.clearMessagesBtn,
   });
+  
+  // 首先检查用户身份是否有效
+  const isAuthValid = await checkUserAuth();
+  if (!isAuthValid) {
+    // 身份无效，已跳转到登录页面，直接返回
+    return;
+  }
   
   setupMessageListener();
   fetchWsStatus();

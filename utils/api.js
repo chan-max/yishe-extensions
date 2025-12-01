@@ -194,7 +194,9 @@ async function apiRequest(url, options = {}) {
     } catch {
       errorData = { message: errorText || `HTTP ${response.status}` };
     }
-    throw new Error(errorData.message || errorData.msg || `HTTP ${response.status}`);
+    const error = new Error(errorData.message || errorData.msg || `HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
   
   const contentType = response.headers.get('content-type');
@@ -266,8 +268,11 @@ async function fetchUserInfo() {
     throw new Error('获取用户信息失败：响应为空');
   } catch (error) {
     console.error('获取用户信息失败:', error);
-    // 如果获取用户信息失败，清除 token
-    await clearToken();
+    // 如果是 401 错误，清除 token 和用户信息
+    if (error.status === 401 || (error.message && error.message.includes('401'))) {
+      await clearToken();
+      await clearUserInfo();
+    }
     throw error;
   }
 }

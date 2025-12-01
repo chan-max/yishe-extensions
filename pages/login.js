@@ -33,8 +33,6 @@
   const loginError = document.getElementById('login-error');
   const devModeToggle = document.getElementById('dev-mode-toggle');
   const devModeInfo = document.getElementById('dev-mode-info');
-  const devApiUrl = document.getElementById('dev-api-url');
-  const devWsUrl = document.getElementById('dev-ws-url');
   
   // 加载开发模式状态
   async function loadDevMode() {
@@ -46,15 +44,7 @@
   // 更新开发模式信息显示
   async function updateDevModeInfo() {
     const isDev = devModeToggle.checked;
-    if (isDev) {
-      devModeInfo.style.display = 'block';
-      const apiUrl = await ApiUtils.getApiBaseUrl();
-      const wsUrl = await ApiUtils.getWsBaseUrl();
-      devApiUrl.textContent = apiUrl;
-      devWsUrl.textContent = wsUrl;
-    } else {
-      devModeInfo.style.display = 'none';
-    }
+    devModeInfo.style.display = isDev ? 'block' : 'none';
   }
   
   // 开发模式切换
