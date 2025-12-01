@@ -120,10 +120,55 @@
     }
   }
 
+  async function setupDevModeControls() {
+    const toggle = document.getElementById('dev-mode-toggle-control');
+    const stateLabel = document.getElementById('dev-mode-state');
+    const apiLabel = document.getElementById('dev-mode-api-url-control');
+    const wsLabel = document.getElementById('dev-mode-ws-url-control');
+
+    if (!toggle || !stateLabel || !apiLabel || !wsLabel) {
+      return;
+    }
+
+    try {
+      const ApiUtils = await ensureApiUtils();
+      if (!ApiUtils) {
+        throw new Error('ApiUtils 未加载');
+      }
+
+      async function refreshDevInfo() {
+        const isDev = await ApiUtils.isDevMode();
+        toggle.checked = isDev;
+        stateLabel.textContent = isDev ? '开发模式' : '生产模式';
+        apiLabel.textContent = await ApiUtils.getApiBaseUrl();
+        wsLabel.textContent = await ApiUtils.getWsBaseUrl();
+      }
+
+      toggle.addEventListener('change', async () => {
+        toggle.disabled = true;
+        try {
+          await ApiUtils.setDevMode(toggle.checked);
+          await refreshDevInfo();
+        } catch (error) {
+          console.error('[control] 切换开发模式失败:', error);
+          toggle.checked = !toggle.checked;
+        } finally {
+          toggle.disabled = false;
+        }
+      });
+
+      await refreshDevInfo();
+    } catch (error) {
+      console.error('[control] 初始化开发模式面板失败:', error);
+      toggle.disabled = true;
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     setupNavigation();
     setupFeatureBoard();
     loadUserInfo();
+    setupDevModeControls();
   });
 
   function setupNavigation() {

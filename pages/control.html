@@ -48,6 +48,33 @@
         <p>实时掌控浏览器插件运行状态与协作信息</p>
       </header>
 
+      <section class="control-section dev-mode-section">
+        <div class="dev-mode-card">
+          <div class="dev-mode-main">
+            <div>
+              <p class="dev-mode-label">当前运行环境</p>
+              <h2 id="dev-mode-state" class="dev-mode-state">生产模式</h2>
+              <p class="dev-mode-hint">切换后将重新连接 WebSocket 并更新接口地址</p>
+            </div>
+            <label class="dev-mode-switch">
+              <input type="checkbox" id="dev-mode-toggle-control">
+              <span class="dev-mode-slider"></span>
+              <span class="dev-mode-switch-text">开发模式</span>
+            </label>
+          </div>
+          <div class="dev-mode-endpoints">
+            <div class="dev-mode-endpoint">
+              <span class="dev-mode-endpoint-label">API</span>
+              <span id="dev-mode-api-url-control" class="dev-mode-endpoint-value">-</span>
+            </div>
+            <div class="dev-mode-endpoint">
+              <span class="dev-mode-endpoint-label">WebSocket</span>
+              <span id="dev-mode-ws-url-control" class="dev-mode-endpoint-value">-</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section id="panel-ws" class="control-section">
         <div class="control-section-header">
           <div>

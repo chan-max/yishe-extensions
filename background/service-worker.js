@@ -42,12 +42,14 @@ let scriptsLoaded = {
   }
 })();
 
-const USE_PRODUCTION_WS = false;
-const PROD_WS_ENDPOINT = 'https://1s.design:1520/ws';
-const DEV_WS_ENDPOINT = 'http://localhost:1520/ws';
-const DEFAULT_WS_ENDPOINT = USE_PRODUCTION_WS ? PROD_WS_ENDPOINT : DEV_WS_ENDPOINT;
+const DEFAULT_PROD_WS_ENDPOINT = 'https://1s.design:1520/ws';
+const DEFAULT_DEV_WS_ENDPOINT = 'http://localhost:1520/ws';
+const DEFAULT_WS_ENDPOINT = DEFAULT_PROD_WS_ENDPOINT;
 const STORAGE_ENDPOINT_KEY = 'wsEndpoint';
 const STORAGE_ENDPOINT_CUSTOM_KEY = 'wsEndpointCustom';
+const STORAGE_DEV_MODE_KEY = 'devMode';
+const STORAGE_DEV_WS_BASE_URL_KEY = 'devWsBaseUrl';
+const STORAGE_WS_BASE_URL_KEY = 'wsBaseUrl';
 const HEARTBEAT_INTERVAL = 15000;
 const HEARTBEAT_TIMEOUT = 10000;
 
@@ -938,6 +940,22 @@ async function connectWebsocketIfAuthenticated(context = 'manual') {
   return true;
 }
 
+async function forceReconnect(context = 'manual') {
+  try {
+    log(`[WS] ${context}: 开始强制重连`);
+    disconnectWebsocket(`force-reconnect:${context}`);
+    await ensureEndpoint();
+    await connectWebsocketIfAuthenticated(context);
+  } catch (error) {
+    log(`[WS] ${context}: 强制重连失败`, serializeError(error));
+    updateWsState({
+      status: 'error',
+      lastError: serializeError(error),
+    });
+    throw error;
+  }
+}
+
 function handleAdminMessage(data) {
   log('[handleAdminMessage] 开始处理管理员消息');
   log('[handleAdminMessage] 输入数据:', data);
@@ -1059,18 +1077,27 @@ function handleAdminMessage(data) {
 
 async function ensureEndpoint() {
   try {
-    const result = await storageGet([STORAGE_ENDPOINT_KEY, STORAGE_ENDPOINT_CUSTOM_KEY]);
+    const result = await storageGet([
+      STORAGE_ENDPOINT_KEY,
+      STORAGE_ENDPOINT_CUSTOM_KEY,
+      STORAGE_DEV_MODE_KEY,
+      STORAGE_DEV_WS_BASE_URL_KEY,
+      STORAGE_WS_BASE_URL_KEY,
+    ]);
     const storedEndpoint = result[STORAGE_ENDPOINT_KEY];
-    const isCustom = Boolean(result[STORAGE_ENDPOINT_CUSTOM_KEY]);
+    const isCustom = Boolean(result[STORAGE_ENDPOINT_CUSTOM_KEY] && storedEndpoint);
 
-    if (isCustom && storedEndpoint) {
+    if (isCustom) {
       wsEndpoint = storedEndpoint;
       log('使用自定义 WebSocket 端点:', wsEndpoint);
     } else {
-      wsEndpoint = DEFAULT_WS_ENDPOINT;
-      log('使用默认 WebSocket 端点:', wsEndpoint);
+      const devModeEnabled = Boolean(result[STORAGE_DEV_MODE_KEY]);
+      wsEndpoint = devModeEnabled
+        ? (result[STORAGE_DEV_WS_BASE_URL_KEY] || DEFAULT_DEV_WS_ENDPOINT)
+        : (result[STORAGE_WS_BASE_URL_KEY] || DEFAULT_PROD_WS_ENDPOINT);
+      log(`使用${devModeEnabled ? '开发' : '生产'} WebSocket 端点:`, wsEndpoint);
       await storageSet({
-        [STORAGE_ENDPOINT_KEY]: DEFAULT_WS_ENDPOINT,
+        [STORAGE_ENDPOINT_KEY]: wsEndpoint,
         [STORAGE_ENDPOINT_CUSTOM_KEY]: false,
       }).catch((error) => {
         log('写入默认端点失败（可忽略）:', serializeError(error));
@@ -1078,9 +1105,9 @@ async function ensureEndpoint() {
     }
   } catch (error) {
     log('确保端点时出错，使用默认端点:', serializeError(error));
-    wsEndpoint = DEFAULT_WS_ENDPOINT;
+    wsEndpoint = DEFAULT_PROD_WS_ENDPOINT;
     storageSet({
-      [STORAGE_ENDPOINT_KEY]: DEFAULT_WS_ENDPOINT,
+      [STORAGE_ENDPOINT_KEY]: wsEndpoint,
       [STORAGE_ENDPOINT_CUSTOM_KEY]: false,
     }).catch((err) => {
       log('写入默认端点失败（可忽略）:', serializeError(err));
@@ -1092,14 +1119,23 @@ async function ensureEndpoint() {
 
 function setEndpoint(newEndpoint, callback) {
   const normalized = typeof newEndpoint === 'string' ? newEndpoint.trim() : '';
-  const effectiveEndpoint = normalized || DEFAULT_WS_ENDPOINT;
-  const isCustom = Boolean(normalized) && effectiveEndpoint !== DEFAULT_WS_ENDPOINT;
 
-  storageSet({
-    [STORAGE_ENDPOINT_KEY]: effectiveEndpoint,
-    [STORAGE_ENDPOINT_CUSTOM_KEY]: isCustom,
-  })
-    .then(() => {
+  storageGet([STORAGE_DEV_MODE_KEY])
+    .then((result) => {
+      const devModeEnabled = Boolean(result[STORAGE_DEV_MODE_KEY]);
+      const fallbackEndpoint = devModeEnabled ? DEFAULT_DEV_WS_ENDPOINT : DEFAULT_PROD_WS_ENDPOINT;
+      const effectiveEndpoint = normalized || fallbackEndpoint;
+      const isCustom = Boolean(normalized);
+
+      return storageSet({
+        [STORAGE_ENDPOINT_KEY]: effectiveEndpoint,
+        [STORAGE_ENDPOINT_CUSTOM_KEY]: isCustom,
+      }).then(() => ({
+        effectiveEndpoint,
+        isCustom,
+      }));
+    })
+    .then(({ effectiveEndpoint, isCustom }) => {
       wsEndpoint = effectiveEndpoint;
       updateWsState({ endpoint: wsEndpoint });
       log('WebSocket 端点已更新为:', wsEndpoint, '(custom:', isCustom, ')');
@@ -1218,12 +1254,23 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   }
   const tokenChanged = Object.prototype.hasOwnProperty.call(changes, AUTH_TOKEN_KEY);
   const userInfoChanged = Object.prototype.hasOwnProperty.call(changes, AUTH_USER_INFO_KEY);
-  if (!tokenChanged && !userInfoChanged) {
-    return;
+  const devConfigChanged =
+    Object.prototype.hasOwnProperty.call(changes, STORAGE_DEV_MODE_KEY) ||
+    Object.prototype.hasOwnProperty.call(changes, STORAGE_DEV_WS_BASE_URL_KEY) ||
+    Object.prototype.hasOwnProperty.call(changes, STORAGE_WS_BASE_URL_KEY);
+
+  if (tokenChanged || userInfoChanged) {
+    connectWebsocketIfAuthenticated('auth-state-change').catch((error) => {
+      log('[WS] auth-state-change: 处理失败', serializeError(error));
+    });
   }
-  connectWebsocketIfAuthenticated('auth-state-change').catch((error) => {
-    log('[WS] auth-state-change: 处理失败', serializeError(error));
-  });
+
+  if (devConfigChanged) {
+    forceReconnect('dev-config-change')
+      .catch((error) => {
+        log('[WS] dev-config-change: 处理失败', serializeError(error));
+      });
+  }
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -1288,7 +1335,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'reconnectWebsocket') {
-    connectWebsocketIfAuthenticated('manual-reconnect')
+    forceReconnect('manual-reconnect')
+      .then(() => sendResponse({ success: true }))
+      .catch((error) => sendResponse({ success: false, error: serializeError(error) }));
+    return true;
+  }
+
+  if (request.action === 'updateDevMode') {
+    forceReconnect('dev-mode-switch')
       .then(() => sendResponse({ success: true }))
       .catch((error) => sendResponse({ success: false, error: serializeError(error) }));
     return true;
