@@ -37,6 +37,7 @@
       <section class="ws-status-card">
         <div id="loading" class="loading">状态加载中...</div>
         <div id="ws-status-content" style="display: none;">
+          <div class="ws-status-title">服务端连接</div>
           <div class="ws-status-header">
             <div class="ws-status-indicator">
               <span id="status-dot" class="status-dot disconnected"></span>
@@ -46,8 +47,7 @@
               重新连接
             </button>
           </div>
-          <div id="ws-status-endpoint" class="ws-status-endpoint" title="未配置">
-            未配置
+          <div id="ws-status-endpoint" class="ws-status-endpoint" style="display: none;" title="已配置">
           </div>
           <div id="ws-status-meta" class="ws-status-meta" style="display: none;">
             <span id="ping-time"></span>
@@ -56,6 +56,30 @@
           </div>
           <div id="ws-status-error" class="ws-status-error" style="display: none;">
             错误：<span id="error-text"></span>
+          </div>
+        </div>
+      </section>
+      <section class="ws-status-card">
+        <div id="client-ws-status-content" style="display: none;">
+          <div class="ws-status-title">客户端连接</div>
+          <div class="ws-status-header">
+            <div class="ws-status-indicator">
+              <span id="client-status-dot" class="status-dot disconnected"></span>
+              <span id="client-ws-status-label" class="ws-status-label">已断开</span>
+            </div>
+            <button id="client-reconnect-btn" class="ws-reconnect-btn" disabled>
+              重新连接
+            </button>
+          </div>
+          <div id="client-ws-status-endpoint" class="ws-status-endpoint" style="display: none;" title="本地客户端">
+          </div>
+          <div id="client-ws-status-meta" class="ws-status-meta" style="display: none;">
+            <span id="client-ping-time"></span>
+            <span id="client-pong-time"></span>
+            <span id="client-latency"></span>
+          </div>
+          <div id="client-ws-status-error" class="ws-status-error" style="display: none;">
+            错误：<span id="client-error-text"></span>
           </div>
         </div>
       </section>

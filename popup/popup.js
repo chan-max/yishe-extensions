@@ -9,6 +9,17 @@ const wsState = {
   lastError: null,
 };
 
+// 本地客户端 WebSocket 状态
+const clientWsState = {
+  status: 'disconnected',
+  endpoint: 'localhost:1519',
+  lastPingAt: null,
+  lastPongAt: null,
+  lastLatencyMs: null,
+  retryCount: 0,
+  lastError: null,
+};
+
 // 状态信息映射
 const statusInfo = {
   connected: { text: '已连接', dotClass: 'connected' },
@@ -36,6 +47,18 @@ const elements = {
   adminMessagesEmpty: document.getElementById('admin-messages-empty'),
   clearMessagesBtn: document.getElementById('clear-messages-btn'),
   openInTabBtn: document.getElementById('open-in-tab-btn'),
+  // 客户端连接元素
+  clientWsStatusContent: document.getElementById('client-ws-status-content'),
+  clientStatusDot: document.getElementById('client-status-dot'),
+  clientWsStatusLabel: document.getElementById('client-ws-status-label'),
+  clientReconnectBtn: document.getElementById('client-reconnect-btn'),
+  clientWsStatusEndpoint: document.getElementById('client-ws-status-endpoint'),
+  clientWsStatusMeta: document.getElementById('client-ws-status-meta'),
+  clientPingTime: document.getElementById('client-ping-time'),
+  clientPongTime: document.getElementById('client-pong-time'),
+  clientLatency: document.getElementById('client-latency'),
+  clientWsStatusError: document.getElementById('client-ws-status-error'),
+  clientErrorText: document.getElementById('client-error-text'),
 };
 
 // 格式化时间戳
@@ -58,9 +81,9 @@ function updateUI() {
   elements.statusDot.className = `status-dot ${status.dotClass}`;
   elements.wsStatusLabel.textContent = status.text;
   
-  // 更新端点（隐藏实际地址，仅显示状态）
-  elements.wsStatusEndpoint.textContent = wsState.endpoint ? '已配置' : '未配置';
-  elements.wsStatusEndpoint.title = 'WebSocket 连接已配置';
+  // 不显示具体地址（保密）
+  // elements.wsStatusEndpoint.textContent = wsState.endpoint ? '已配置' : '未配置';
+  // elements.wsStatusEndpoint.title = 'WebSocket 连接已配置';
   
   // 更新元数据
   const hasMeta = wsState.lastPingAt || wsState.lastPongAt || wsState.lastLatencyMs;
@@ -97,13 +120,70 @@ function updateUI() {
   elements.reconnectBtn.disabled = !canReconnect;
 }
 
+// 更新客户端连接 UI 状态
+function updateClientUI() {
+  const status = statusInfo[clientWsState.status] || statusInfo.disconnected;
+  
+  // 更新状态指示器
+  elements.clientStatusDot.className = `status-dot ${status.dotClass}`;
+  elements.clientWsStatusLabel.textContent = status.text;
+  
+  // 不显示具体地址（保密）
+  // elements.clientWsStatusEndpoint.textContent = clientWsState.endpoint || 'localhost:1519';
+  // elements.clientWsStatusEndpoint.title = '本地客户端连接';
+  
+  // 更新元数据
+  const hasMeta = clientWsState.lastPingAt || clientWsState.lastPongAt || clientWsState.lastLatencyMs;
+  elements.clientWsStatusMeta.style.display = hasMeta ? 'flex' : 'none';
+  
+  if (clientWsState.lastPingAt) {
+    elements.clientPingTime.textContent = `Ping: ${formatTimestamp(clientWsState.lastPingAt)}`;
+  } else {
+    elements.clientPingTime.textContent = '';
+  }
+  
+  if (clientWsState.lastPongAt) {
+    elements.clientPongTime.textContent = `Pong: ${formatTimestamp(clientWsState.lastPongAt)}`;
+  } else {
+    elements.clientPongTime.textContent = '';
+  }
+  
+  if (clientWsState.lastLatencyMs !== null) {
+    elements.clientLatency.textContent = `延迟: ${clientWsState.lastLatencyMs}ms`;
+  } else {
+    elements.clientLatency.textContent = '';
+  }
+
+  // 更新错误信息
+  if (clientWsState.lastError) {
+    elements.clientErrorText.textContent = clientWsState.lastError;
+    elements.clientWsStatusError.style.display = 'block';
+  } else {
+    elements.clientWsStatusError.style.display = 'none';
+  }
+  
+  // 更新重新连接按钮
+  const canReconnect = clientWsState.status !== 'connecting' && clientWsState.status !== 'reconnecting';
+  elements.clientReconnectBtn.disabled = !canReconnect;
+  
+  // 显示客户端连接状态区域
+  elements.clientWsStatusContent.style.display = 'block';
+}
+
 // 从 storage 读取 WebSocket 状态（后备方案）
 function loadWsStatusFromStorage() {
-  chrome.storage.local.get(['wsStatus'], (result) => {
-    if (!chrome.runtime.lastError && result.wsStatus) {
-      console.log('[popup] loadWsStatusFromStorage: 从 storage 读取到状态:', result.wsStatus);
-      Object.assign(wsState, result.wsStatus);
-      updateUI();
+  chrome.storage.local.get(['wsStatus', 'clientWsStatus'], (result) => {
+    if (!chrome.runtime.lastError) {
+      if (result.wsStatus) {
+        console.log('[popup] loadWsStatusFromStorage: 从 storage 读取到状态:', result.wsStatus);
+        Object.assign(wsState, result.wsStatus);
+        updateUI();
+      }
+      if (result.clientWsStatus) {
+        console.log('[popup] loadWsStatusFromStorage: 从 storage 读取到客户端状态:', result.clientWsStatus);
+        Object.assign(clientWsState, result.clientWsStatus);
+        updateClientUI();
+      }
     }
   });
 }
@@ -148,7 +228,18 @@ function fetchWsStatus() {
       }
         }
       });
+  
+  // 获取客户端连接状态
+  chrome.runtime.sendMessage({ action: 'getClientWebsocketStatus' }, (response) => {
+    console.log('[popup] fetchClientWsStatus: 收到响应:', response);
+    
+    if (!chrome.runtime.lastError && response && response.success && response.data) {
+      console.log('[popup] fetchClientWsStatus: 更新状态:', response.data);
+      Object.assign(clientWsState, response.data);
+      updateClientUI();
     }
+  });
+}
 
 // 重新连接
 function handleReconnect() {
@@ -161,6 +252,24 @@ function handleReconnect() {
       wsState.status = 'error';
       wsState.lastError = response?.error || '重新连接失败';
       updateUI();
+    } else {
+      // 重新获取状态
+      setTimeout(fetchWsStatus, 500);
+    }
+  });
+}
+
+// 重新连接客户端
+function handleClientReconnect() {
+  chrome.runtime.sendMessage({ action: 'reconnectClientWebsocket' }, (response) => {
+    if (chrome.runtime.lastError) {
+      clientWsState.status = 'error';
+      clientWsState.lastError = chrome.runtime.lastError.message;
+      updateClientUI();
+    } else if (!response || response.success !== true) {
+      clientWsState.status = 'error';
+      clientWsState.lastError = response?.error || '重新连接失败';
+      updateClientUI();
     } else {
       // 重新获取状态
       setTimeout(fetchWsStatus, 500);
@@ -282,6 +391,18 @@ function setupMessageListener() {
       Object.assign(wsState, message.payload);
       updateUI();
         console.log('[popup] onMessage: 状态已更新');
+      }
+      // 发送响应确认收到消息
+      if (sendResponse) {
+        sendResponse({ success: true });
+      }
+    } else if (message && message.type === 'clientWsStatus:update') {
+      console.log('[popup] onMessage: 处理 clientWsStatus:update');
+      console.log('[popup] onMessage: 客户端状态数据:', message.payload);
+      if (message.payload) {
+        Object.assign(clientWsState, message.payload);
+        updateClientUI();
+        console.log('[popup] onMessage: 客户端状态已更新');
       }
       // 发送响应确认收到消息
       if (sendResponse) {
@@ -486,41 +607,72 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearMessagesBtn: !!elements.clearMessagesBtn,
   });
   
-  // 首先检查用户身份是否有效
-  const isAuthValid = await checkUserAuth();
-  if (!isAuthValid) {
-    // 身份无效，已跳转到登录页面，直接返回
-    return;
-  }
-  
+  // 设置消息监听器（无论是否登录都需要）
   setupMessageListener();
-  fetchWsStatus();
-  loadUserInfo();
-
-  // 仅当存在消息容器时才加载消息
-  if (elements.adminMessagesList && elements.adminMessagesEmpty) {
-    loadAdminMessages();
-  }
   
-  // 绑定重新连接按钮
+  // 获取连接状态（无论是否登录都需要）
+  fetchWsStatus();
+  
+  // 绑定重新连接按钮（无论是否登录都需要）
   if (elements.reconnectBtn) {
     elements.reconnectBtn.addEventListener('click', handleReconnect);
   }
-  
-  // 绑定清空消息按钮
-  if (elements.clearMessagesBtn) {
-    elements.clearMessagesBtn.addEventListener('click', clearAdminMessages);
+  if (elements.clientReconnectBtn) {
+    elements.clientReconnectBtn.addEventListener('click', handleClientReconnect);
   }
+  
+  // 检查是否在控制台页面（control.html）
+  const isControlPage = window.location.pathname.includes('control.html');
+  
+  // 在控制台页面，即使未登录也显示连接状态
+  if (isControlPage) {
+    // 在控制台页面，加载用户信息但不强制登录
+    try {
+      await loadUserInfo();
+    } catch (error) {
+      // 忽略登录错误，继续显示连接状态
+      console.log('[popup] 控制台页面：加载用户信息失败，继续显示连接状态', error);
+    }
+    
+    // 仅当存在消息容器时才加载消息
+    if (elements.adminMessagesList && elements.adminMessagesEmpty) {
+      loadAdminMessages();
+    }
+    
+    // 绑定清空消息按钮
+    if (elements.clearMessagesBtn) {
+      elements.clearMessagesBtn.addEventListener('click', clearAdminMessages);
+    }
+  } else {
+    // 在 popup 页面，需要检查登录状态
+    const isAuthValid = await checkUserAuth();
+    if (!isAuthValid) {
+      // 身份无效，已跳转到登录页面，直接返回
+      return;
+    }
+    
+    loadUserInfo();
 
-  // 在新标签页打开
-  if (elements.openInTabBtn) {
-    elements.openInTabBtn.addEventListener('click', () => {
-      const url = chrome.runtime.getURL('pages/control.html');
-      chrome.tabs.create({ url });
-      try {
-        window.close();
-      } catch {}
-    });
+    // 仅当存在消息容器时才加载消息
+    if (elements.adminMessagesList && elements.adminMessagesEmpty) {
+      loadAdminMessages();
+    }
+    
+    // 绑定清空消息按钮
+    if (elements.clearMessagesBtn) {
+      elements.clearMessagesBtn.addEventListener('click', clearAdminMessages);
+    }
+
+    // 在新标签页打开
+    if (elements.openInTabBtn) {
+      elements.openInTabBtn.addEventListener('click', () => {
+        const url = chrome.runtime.getURL('pages/control.html');
+        chrome.tabs.create({ url });
+        try {
+          window.close();
+        } catch {}
+      });
+    }
   }
   
   console.log('[popup] DOMContentLoaded: 初始化完成');

@@ -45,6 +45,7 @@ let scriptsLoaded = {
 const DEFAULT_PROD_WS_ENDPOINT = 'https://1s.design:1520/ws';
 const DEFAULT_DEV_WS_ENDPOINT = 'http://localhost:1520/ws';
 const DEFAULT_WS_ENDPOINT = DEFAULT_PROD_WS_ENDPOINT;
+const CLIENT_WS_ENDPOINT = 'http://localhost:1519'; // 本地客户端固定地址（不包含路径，路径由 Socket.IO 配置指定）
 const STORAGE_ENDPOINT_KEY = 'wsEndpoint';
 const STORAGE_ENDPOINT_CUSTOM_KEY = 'wsEndpointCustom';
 const STORAGE_DEV_MODE_KEY = 'devMode';
@@ -79,6 +80,13 @@ let heartbeatTimeoutTimer = null;
 let lastPingTimestampMs = null;
 let websocketInitPromise = null;
 
+// 本地客户端连接相关变量
+let clientSocket = null;
+let clientHeartbeatTimer = null;
+let clientHeartbeatTimeoutTimer = null;
+let clientLastPingTimestampMs = null;
+let clientWebsocketInitPromise = null;
+
 const wsState = {
   status: 'disconnected',
   endpoint: wsEndpoint,
@@ -90,6 +98,19 @@ const wsState = {
   retryCount: 0,
   lastPayload: null,
   clientInfo: null,
+};
+
+// 本地客户端连接状态
+const clientWsState = {
+  status: 'disconnected',
+  endpoint: CLIENT_WS_ENDPOINT,
+  connectedAt: null,
+  lastPingAt: null,
+  lastPongAt: null,
+  lastLatencyMs: null,
+  lastError: null,
+  retryCount: 0,
+  lastPayload: null,
 };
 
 function log(...args) {
@@ -710,6 +731,26 @@ function broadcastWsState() {
   );
 }
 
+function broadcastClientWsState() {
+  const snapshot = { ...clientWsState };
+
+  chrome.storage.local.set({ clientWsStatus: snapshot }, () => {
+    if (chrome.runtime.lastError) {
+      log('存储客户端 WebSocket 状态失败:', chrome.runtime.lastError.message);
+    }
+  });
+
+  chrome.runtime.sendMessage(
+    { type: 'clientWsStatus:update', payload: snapshot },
+    () => {
+      const err = chrome.runtime.lastError;
+      if (err && !err.message.includes('Receiving end does not exist.')) {
+        log('广播客户端 WebSocket 状态失败:', err.message);
+      }
+    }
+  );
+}
+
 function updateWsState(patch) {
   Object.assign(wsState, patch, { endpoint: wsEndpoint });
   broadcastWsState();
@@ -731,6 +772,22 @@ function cleanupSocket() {
   }
 }
 
+function cleanupClientSocket() {
+  if (clientSocket) {
+    try {
+      clientSocket.removeAllListeners();
+    } catch (error) {
+      // ignore
+    }
+    try {
+      clientSocket.disconnect();
+    } catch (error) {
+      // ignore
+    }
+    clientSocket = null;
+  }
+}
+
 function clearHeartbeatInterval() {
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
@@ -748,6 +805,62 @@ function clearHeartbeatTimeout() {
 function stopHeartbeatTimers() {
   clearHeartbeatInterval();
   clearHeartbeatTimeout();
+}
+
+function clearClientHeartbeatInterval() {
+  if (clientHeartbeatTimer) {
+    clearInterval(clientHeartbeatTimer);
+    clientHeartbeatTimer = null;
+  }
+}
+
+function clearClientHeartbeatTimeout() {
+  if (clientHeartbeatTimeoutTimer) {
+    clearTimeout(clientHeartbeatTimeoutTimer);
+    clientHeartbeatTimeoutTimer = null;
+  }
+}
+
+function stopClientHeartbeatTimers() {
+  clearClientHeartbeatInterval();
+  clearClientHeartbeatTimeout();
+}
+
+function scheduleClientHeartbeatTimeout() {
+  clearClientHeartbeatTimeout();
+  clientHeartbeatTimeoutTimer = setTimeout(() => {
+    log('[ClientWS] 心跳超时，准备重连');
+    updateClientWsState({
+      status: 'error',
+      lastError: 'Heartbeat timeout',
+    });
+    if (clientSocket) {
+      clientSocket.disconnect();
+    }
+  }, HEARTBEAT_TIMEOUT);
+}
+
+function sendClientHeartbeat() {
+  if (!clientSocket || !clientSocket.connected) {
+    return;
+  }
+  clientLastPingTimestampMs = Date.now();
+  updateClientWsState({
+    lastPingAt: new Date(clientLastPingTimestampMs).toISOString(),
+  });
+  clientSocket.emit('ping');
+  scheduleClientHeartbeatTimeout();
+}
+
+function startClientHeartbeatLoop() {
+  stopClientHeartbeatTimers();
+  clientHeartbeatTimer = setInterval(sendClientHeartbeat, HEARTBEAT_INTERVAL);
+  sendClientHeartbeat();
+}
+
+function updateClientWsState(patch) {
+  Object.assign(clientWsState, patch, { endpoint: CLIENT_WS_ENDPOINT });
+  broadcastClientWsState();
 }
 
 function disconnectWebsocket(reason) {
@@ -983,6 +1096,165 @@ async function connectWebsocketIfAuthenticated(context = 'manual') {
     });
 
   await websocketInitPromise;
+  return true;
+}
+
+// 初始化本地客户端 WebSocket 连接
+async function initClientWebsocket() {
+  if (!scriptsLoaded.socketio || typeof io === 'undefined') {
+    const errorMsg = scriptsLoaded.error || 'socket.io client 不可用，请确保 socket.io.min.js 已正确导入';
+    log('[ClientWS] Socket.IO 初始化失败:', errorMsg);
+    updateClientWsState({
+      status: 'error',
+      lastError: errorMsg,
+    });
+    return;
+  }
+
+  stopClientHeartbeatTimers();
+  cleanupClientSocket();
+
+  updateClientWsState({
+    status: 'connecting',
+    lastError: null,
+    retryCount: 0,
+  });
+
+  log('[ClientWS] 开始连接到本地客户端 WebSocket:', CLIENT_WS_ENDPOINT);
+
+  // 获取客户端元数据
+  const metadata = await ensureClientMetadata();
+  const query = {
+    clientSource: CLIENT_SOURCE,
+    clientId: metadata?.clientId || `ext_${Date.now()}`,
+  };
+
+  try {
+    query.clientInfo = JSON.stringify(metadata);
+  } catch (e) {
+    log('[ClientWS] 序列化客户端信息失败:', e);
+  }
+
+  clientSocket = io(CLIENT_WS_ENDPOINT, {
+    path: '/ws',
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 2000,
+    reconnectionDelayMax: 12000,
+    timeout: 8000,
+    query,
+  });
+
+  clientSocket.on('connect', () => {
+    log('[ClientWS] 本地客户端 WebSocket 已连接');
+    clientLastPingTimestampMs = null;
+    updateClientWsState({
+      status: 'connected',
+      connectedAt: new Date().toISOString(),
+      lastError: null,
+      lastLatencyMs: null,
+      retryCount: 0,
+    });
+    startClientHeartbeatLoop();
+  });
+
+  clientSocket.io.on('reconnect_attempt', (attempt) => {
+    log('[ClientWS] 正在尝试重连', attempt);
+    updateClientWsState({
+      status: 'reconnecting',
+      retryCount: attempt,
+    });
+  });
+
+  clientSocket.io.on('reconnect_failed', () => {
+    log('[ClientWS] 重连失败');
+    updateClientWsState({
+      status: 'error',
+      lastError: 'Reconnect failed',
+    });
+  });
+
+  clientSocket.io.on('reconnect_error', (error) => {
+    const message = serializeError(error);
+    log('[ClientWS] 重连错误', message);
+    updateClientWsState({
+      status: 'error',
+      lastError: message,
+    });
+  });
+
+  clientSocket.on('disconnect', (reason) => {
+    log('[ClientWS] 本地客户端 WebSocket 已断开', reason);
+    stopClientHeartbeatTimers();
+    updateClientWsState({
+      status: 'disconnected',
+      connectedAt: null,
+      lastError: reason || null,
+    });
+  });
+
+  clientSocket.on('connect_error', (error) => {
+    const message = serializeError(error);
+    log('[ClientWS] 连接错误', message);
+    updateClientWsState({
+      status: 'error',
+      lastError: message,
+    });
+  });
+
+  clientSocket.on('error', (error) => {
+    const message = serializeError(error);
+    log('[ClientWS] Socket 错误', message);
+    updateClientWsState({
+      status: 'error',
+      lastError: message,
+    });
+  });
+
+  clientSocket.on('pong', (payload) => {
+    clearClientHeartbeatTimeout();
+    const now = Date.now();
+    const latency = clientLastPingTimestampMs ? now - clientLastPingTimestampMs : null;
+    clientLastPingTimestampMs = null;
+    updateClientWsState({
+      status: 'connected',
+      lastPongAt: new Date(now).toISOString(),
+      lastLatencyMs: latency,
+      lastError: null,
+      lastPayload: payload || null,
+    });
+  });
+}
+
+async function connectClientWebsocket() {
+  if (clientSocket && clientSocket.connected) {
+    log('[ClientWS] 本地客户端 WebSocket 已连接，跳过重复连接');
+    return true;
+  }
+
+  if (clientWsState.status === 'connecting' || clientWsState.status === 'reconnecting') {
+    log('[ClientWS] 本地客户端 WebSocket 正在连接中，跳过重复触发');
+    return true;
+  }
+
+  if (clientWebsocketInitPromise) {
+    log('[ClientWS] 已有连接任务进行中，等待完成');
+    await clientWebsocketInitPromise;
+    return true;
+  }
+
+  log('[ClientWS] 开始连接本地客户端 WebSocket');
+  clientWebsocketInitPromise = initClientWebsocket()
+    .catch((error) => {
+      log('[ClientWS] 初始化本地客户端 WebSocket 失败', serializeError(error));
+      throw error;
+    })
+    .finally(() => {
+      clientWebsocketInitPromise = null;
+    });
+
+  await clientWebsocketInitPromise;
   return true;
 }
 
@@ -1242,12 +1514,18 @@ async function initialize() {
     prefetchLocationInfo();
     // 初始化前先广播一次状态（确保 popup 能获取到初始状态）
     broadcastWsState();
+    broadcastClientWsState();
     const connected = await connectWebsocketIfAuthenticated('initialize');
     if (!connected) {
       log('[WS] initialize: 未登录，等待登录信息后再连接');
     }
+    // 初始化本地客户端连接（不需要登录）
+    connectClientWebsocket().catch((error) => {
+      log('[ClientWS] initialize: 连接本地客户端失败', serializeError(error));
+    });
     // 初始化后再次广播状态（确保状态已更新）
     broadcastWsState();
+    broadcastClientWsState();
     // 恢复 Pinterest 定时任务
     await restorePinterestSchedule();
   } catch (error) {
@@ -1380,8 +1658,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'getClientWebsocketStatus') {
+    sendResponse({ success: true, data: { ...clientWsState } });
+    return true;
+  }
+
   if (request.action === 'reconnectWebsocket') {
     forceReconnect('manual-reconnect')
+      .then(() => sendResponse({ success: true }))
+      .catch((error) => sendResponse({ success: false, error: serializeError(error) }));
+    return true;
+  }
+
+  if (request.action === 'reconnectClientWebsocket') {
+    connectClientWebsocket()
       .then(() => sendResponse({ success: true }))
       .catch((error) => sendResponse({ success: false, error: serializeError(error) }));
     return true;
