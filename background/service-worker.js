@@ -1,4 +1,13 @@
-// service-worker.js: 后台服务 Worker
+// =============================================================
+// service-worker.js: 后台 Service Worker 入口
+// -------------------------------------------------------------
+// 职责概览（记住这 4 点就够了）：
+// 1）加载依赖（socket.io + handlers）
+// 2）管理「服务端 WebSocket」连接状态（1s.design 后端）
+// 3）管理「本地客户端 WebSocket」连接状态（本地 Electron 客户端）
+// 4）处理全局事件（安装、启动、存储变更、右键菜单等）
+// =============================================================
+
 /* global io */
 
 // 简单的日志函数（在 log 函数定义之前使用）
@@ -6,16 +15,20 @@ function simpleLog(...args) {
   console.log('[Core][WS]', ...args);
 }
 
-// 脚本加载状态
+// =============================================================
+// 一、依赖加载 & 全局配置
+// =============================================================
+
+// 脚本加载状态（仅用于调试，不影响业务逻辑）
 let scriptsLoaded = {
   socketio: false,
   error: null
 };
 
-// 加载依赖库（不抛出错误，避免 service worker 崩溃）
+// 加载依赖库（不抛出错误，避免 Service Worker 崩溃）
 (function() {
   try {
-    // 加载 socket.io 客户端
+    // 1. 加载 socket.io 客户端（用于和服务端、本地客户端建立 WebSocket 连接）
     try {
       importScripts('../libs/socket.io.min.js');
       scriptsLoaded.socketio = true;
@@ -25,7 +38,7 @@ let scriptsLoaded = {
       scriptsLoaded.error = (scriptsLoaded.error || '') + ' Socket.IO 加载失败: ' + e.message;
     }
     
-    // 加载消息处理器（目前仅保留基础工具和路由器）
+    // 2. 加载消息处理器（目前仅保留基础工具和路由器）
     try {
       importScripts('handlers/base.js');
       importScripts('handlers/index.js');
@@ -40,10 +53,12 @@ let scriptsLoaded = {
   }
 })();
 
+// 后端 WebSocket 默认地址（生产 / 开发）
 const DEFAULT_PROD_WS_ENDPOINT = 'https://1s.design:1520/ws';
 const DEFAULT_DEV_WS_ENDPOINT = 'http://localhost:1520/ws';
 const DEFAULT_WS_ENDPOINT = DEFAULT_PROD_WS_ENDPOINT;
-const CLIENT_WS_ENDPOINT = 'http://localhost:1519'; // 本地客户端固定地址（不包含路径，路径由 Socket.IO 配置指定）
+// 本地 Electron 客户端固定地址（不包含路径，路径由 Socket.IO 配置指定）
+const CLIENT_WS_ENDPOINT = 'http://localhost:1519';
 const STORAGE_ENDPOINT_KEY = 'wsEndpoint';
 const STORAGE_ENDPOINT_CUSTOM_KEY = 'wsEndpointCustom';
 const STORAGE_DEV_MODE_KEY = 'devMode';
@@ -67,10 +82,12 @@ const LOCATION_ENDPOINT = 'https://ipapi.co/json/';
 const AUTH_TOKEN_KEY = 'accessToken';
 const AUTH_USER_INFO_KEY = 'userInfo';
 
+// 客户端元信息（浏览器、系统、扩展版本等）
 let clientMetadata = null;
 let clientMetadataPromise = null;
 let locationLookupStarted = false;
 
+// 当前服务端 WebSocket 端点
 let wsEndpoint = DEFAULT_WS_ENDPOINT;
 let socket = null;
 let heartbeatTimer = null;
@@ -78,13 +95,14 @@ let heartbeatTimeoutTimer = null;
 let lastPingTimestampMs = null;
 let websocketInitPromise = null;
 
-// 本地客户端连接相关变量
+// 本地客户端（Electron）连接相关变量
 let clientSocket = null;
 let clientHeartbeatTimer = null;
 let clientHeartbeatTimeoutTimer = null;
 let clientLastPingTimestampMs = null;
 let clientWebsocketInitPromise = null;
 
+// 对「服务端 WebSocket」的最新状态快照
 const wsState = {
   status: 'disconnected',
   endpoint: wsEndpoint,
@@ -98,7 +116,7 @@ const wsState = {
   clientInfo: null,
 };
 
-// 本地客户端连接状态
+// 对「本地客户端 WebSocket」的最新状态快照
 const clientWsState = {
   status: 'disconnected',
   endpoint: CLIENT_WS_ENDPOINT,
@@ -111,9 +129,14 @@ const clientWsState = {
   lastPayload: null,
 };
 
+// 统一日志输出，方便过滤
 function log(...args) {
   console.log('[Core][WS]', ...args);
 }
+
+// =============================================================
+// 二、错误序列化 & 通用工具
+// =============================================================
 
 function serializeError(error) {
   if (!error) return 'Unknown error';
@@ -198,134 +221,6 @@ async function sendFeishuNotification(lines) {
 }
 
 // processPinterestUploadCommand 已迁移到 handlers/pinterest.js
-
-const PINTEREST_SCHEDULE_ALARM_NAME = 'pinterest-scheduled-scrape';
-const PINTEREST_SCHEDULE_STORAGE_KEY = 'pinterestScheduleConfig';
-
-async function handlePinterestSchedule(payload) {
-  const action = payload?.action;
-  
-  if (action === 'set') {
-    const intervalMinutes = payload?.intervalMinutes || 60;
-    const params = payload?.params || {};
-    
-    // 保存定时任务配置
-    const scheduleConfig = {
-      params,
-      intervalMinutes,
-      createdAt: new Date().toISOString(),
-    };
-    
-    try {
-      await storageSet({ [PINTEREST_SCHEDULE_STORAGE_KEY]: scheduleConfig });
-      
-      // 清除旧的定时任务
-      try {
-        await chrome.alarms.clear(PINTEREST_SCHEDULE_ALARM_NAME);
-      } catch (e) {
-        // 忽略清除失败（可能不存在）
-      }
-      
-      // 创建新的定时任务（周期性的）
-      chrome.alarms.create(PINTEREST_SCHEDULE_ALARM_NAME, {
-        periodInMinutes: intervalMinutes,
-      });
-      
-      log(`[Pinterest] 定时任务已设置：每 ${intervalMinutes} 分钟执行一次`);
-      return {
-        success: true,
-        message: `定时任务已设置：每 ${intervalMinutes} 分钟执行一次`,
-      };
-    } catch (error) {
-      log('[Pinterest] 设置定时任务失败:', serializeError(error));
-      return {
-        success: false,
-        error: serializeError(error),
-      };
-    }
-  } else if (action === 'clear') {
-    try {
-      await chrome.alarms.clear(PINTEREST_SCHEDULE_ALARM_NAME);
-      await storageSet({ [PINTEREST_SCHEDULE_STORAGE_KEY]: null });
-      log('[Pinterest] 定时任务已清除');
-      return {
-        success: true,
-        message: '定时任务已清除',
-      };
-    } catch (error) {
-      log('[Pinterest] 清除定时任务失败:', serializeError(error));
-      return {
-        success: false,
-        error: serializeError(error),
-      };
-    }
-  } else if (action === 'get') {
-    try {
-      const config = await storageGet([PINTEREST_SCHEDULE_STORAGE_KEY]);
-      const scheduleConfig = config[PINTEREST_SCHEDULE_STORAGE_KEY];
-      
-      // 检查定时任务是否存在
-      const alarm = await new Promise((resolve) => {
-        chrome.alarms.get(PINTEREST_SCHEDULE_ALARM_NAME, (alarm) => {
-          resolve(alarm);
-        });
-      });
-      
-      return {
-        success: true,
-        enabled: Boolean(alarm && scheduleConfig),
-        config: scheduleConfig,
-        nextAlarmTime: alarm?.scheduledTime || null,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: serializeError(error),
-      };
-    }
-  }
-  
-  return {
-    success: false,
-    error: '未知的定时任务操作',
-  };
-}
-
-// Pinterest 爬取相关的辅助函数已迁移到 handlers/pinterest.js 和 handlers/base.js
-
-// executeScheduledPinterestScrape 已通过 handlers/pinterest.js 处理
-// 定时任务现在直接调用 handlers 中的处理器
-async function executeScheduledPinterestScrape(params) {
-  if (!params) {
-    // 从存储中读取定时任务配置
-    const config = await storageGet([PINTEREST_SCHEDULE_STORAGE_KEY]);
-    const scheduleConfig = config[PINTEREST_SCHEDULE_STORAGE_KEY];
-    
-    if (!scheduleConfig || !scheduleConfig.params) {
-      log('[Pinterest] 定时任务配置不存在，跳过执行');
-      return {
-        success: false,
-        error: '定时任务配置不存在',
-      };
-    }
-    
-    params = scheduleConfig.params;
-  }
-  
-  // 通过消息路由器处理爬取命令
-  if (typeof self !== 'undefined' && self.MessageHandlers?.Pinterest) {
-    return await self.MessageHandlers.Pinterest.handle(
-      { command: 'pinterest/scrape', params },
-      { logFn: log, socket }
-    );
-  }
-  
-  log('[Pinterest] Pinterest 处理器未加载');
-  return {
-    success: false,
-    error: 'Pinterest 处理器未加载',
-  };
-}
 
 async function handleControlFeatureExecute(request) {
   const featureId = request?.featureId;
@@ -1507,25 +1402,26 @@ async function restorePinterestSchedule() {
 
 async function initialize() {
   try {
+    // 1. 确定要连接的 WebSocket 端点（生产 / 开发 / 自定义）
     await ensureEndpoint();
+    // 2. 收集一次客户端元信息（浏览器、OS、扩展版本等）
     await ensureClientMetadata();
     prefetchLocationInfo();
-    // 初始化前先广播一次状态（确保 popup 能获取到初始状态）
+    // 3. 初始化前先广播一次状态（确保 popup 能获取到初始状态）
     broadcastWsState();
     broadcastClientWsState();
+    // 4. 如果已经登录，则尝试连接后端 WebSocket
     const connected = await connectWebsocketIfAuthenticated('initialize');
     if (!connected) {
       log('[WS] initialize: 未登录，等待登录信息后再连接');
     }
-    // 初始化本地客户端连接（不需要登录）
+    // 5. 初始化本地客户端连接（不需要登录）
     connectClientWebsocket().catch((error) => {
       log('[ClientWS] initialize: 连接本地客户端失败', serializeError(error));
     });
-    // 初始化后再次广播状态（确保状态已更新）
+    // 6. 初始化后再次广播状态（确保状态已更新）
     broadcastWsState();
     broadcastClientWsState();
-    // 恢复 Pinterest 定时任务
-    await restorePinterestSchedule();
   } catch (error) {
     log('初始化 WebSocket 失败:', serializeError(error));
     updateWsState({
@@ -1535,7 +1431,9 @@ async function initialize() {
   }
 }
 
-// 全局错误处理
+// =============================================================
+// 五、全局错误处理
+// =============================================================
 self.addEventListener('error', (event) => {
   console.error('[Core][WS] Service Worker 全局错误:', event.error);
   log('Service Worker 全局错误: ' + serializeError(event.error));
@@ -1545,6 +1443,10 @@ self.addEventListener('unhandledrejection', (event) => {
   console.error('[Core][WS] Service Worker 未处理的 Promise 拒绝:', event.reason);
   log('Service Worker 未处理的 Promise 拒绝: ' + serializeError(event.reason));
 });
+
+// =============================================================
+// 六、安装 / 启动 / 存储变更等生命周期事件
+// =============================================================
 
 chrome.runtime.onInstalled.addListener(() => {
   log('插件已安装');
@@ -1606,7 +1508,9 @@ chrome.runtime.onStartup.addListener(() => {
   });
 });
 
-// 初始化 Service Worker
+// =============================================================
+// 七、Service Worker 启动入口
+// =============================================================
 try {
   log('Service Worker 开始初始化...');
 initialize().catch((error) => {
@@ -1620,6 +1524,10 @@ initialize().catch((error) => {
   console.error('[Core][WS] Service Worker 初始化异常:', error);
   log('Service Worker 初始化异常: ' + serializeError(error));
 }
+
+// =============================================================
+// 八、扩展内部消息分发（popup / content scripts -> background）
+// =============================================================
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request?.type === 'control/feature-execute') {
