@@ -8,7 +8,9 @@
     "storage",
     "scripting",
     "tabs",
-    "alarms"
+    "alarms",
+    "contextMenus",
+    "downloads"
   ],
   "host_permissions": [
     "http://*/*",

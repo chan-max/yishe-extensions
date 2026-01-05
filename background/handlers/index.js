@@ -76,12 +76,9 @@
   }
 
   // 自动注册已加载的处理器
-  if (global.MessageHandlers?.Pinterest) {
-    registerHandler('pinterest/scrape', global.MessageHandlers.Pinterest);
-  }
-  if (global.MessageHandlers?.Sora) {
-    registerHandler('sora/scrape', global.MessageHandlers.Sora);
-  }
+  // 当前已移除 Pinterest / Sora 等爬取功能，这里暂不做自动注册。
+  // 如后续有新的命令处理器，可在其他脚本中通过 Router.register 手动注册：
+  //   global.MessageHandlers.Router.register('your/command', yourHandler);
 
   // 暴露到全局
   global.MessageHandlers = global.MessageHandlers || {};

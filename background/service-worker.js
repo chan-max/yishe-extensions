@@ -25,11 +25,9 @@ let scriptsLoaded = {
       scriptsLoaded.error = (scriptsLoaded.error || '') + ' Socket.IO 加载失败: ' + e.message;
     }
     
-    // 加载消息处理器
+    // 加载消息处理器（目前仅保留基础工具和路由器）
     try {
       importScripts('handlers/base.js');
-      importScripts('handlers/pinterest.js');
-      importScripts('handlers/sora.js');
       importScripts('handlers/index.js');
       simpleLog('消息处理器已加载');
     } catch (e) {
@@ -1711,4 +1709,138 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     });
   }
 });
+
+// ==================== 右键菜单功能 ====================
+
+/**
+ * 初始化右键菜单
+ */
+function initContextMenus() {
+  // 清除所有现有的右键菜单项（避免重复创建）
+  chrome.contextMenus.removeAll(() => {
+    // 忽略错误（如果菜单项不存在）
+    if (chrome.runtime.lastError) {
+      log('[ContextMenu] 清除菜单项:', chrome.runtime.lastError.message);
+    }
+
+    // 只创建一个简单菜单项：打印当前页面信息
+    chrome.contextMenus.create({
+      id: 'print-page-info',
+      title: '打印当前页面信息',
+      // 使用 all，保证无论在页面、链接、图片、选中文本等位置右键都能看到
+      contexts: ['all']
+    });
+
+    log('[ContextMenu] 右键菜单已初始化（仅打印当前页面信息）');
+  });
+}
+
+/**
+ * 复制文本到剪贴板
+ */
+async function copyToClipboard(text) {
+  try {
+    // 获取当前活动标签页
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs || tabs.length === 0) {
+      throw new Error('无法获取当前标签页');
+    }
+
+    // 使用 scripting API 在页面中执行复制操作
+    await chrome.scripting.executeScript({
+      target: { tabId: tabs[0].id },
+      func: (textToCopy) => {
+        // 创建一个临时的 textarea 元素
+        const textarea = document.createElement('textarea');
+        textarea.value = textToCopy;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        
+        try {
+          const successful = document.execCommand('copy');
+          if (!successful) {
+            throw new Error('复制失败');
+          }
+        } finally {
+          document.body.removeChild(textarea);
+        }
+      },
+      args: [text]
+    });
+
+    log('[ContextMenu] 文本已复制到剪贴板');
+    return true;
+  } catch (error) {
+    log('[ContextMenu] 复制失败:', serializeError(error));
+    throw error;
+  }
+}
+
+/**
+ * 处理右键菜单点击事件
+ */
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  try {
+    log('[ContextMenu] 右键菜单项被点击:', info.menuItemId);
+
+    if (info.menuItemId === 'print-page-info') {
+      // 收集当前页面及点击上下文的关键信息
+      const pageInfo = {
+        // 标签页相关
+        tabId: tab?.id ?? null,
+        tabUrl: tab?.url ?? null,
+        tabTitle: tab?.title ?? null,
+        tabFavIconUrl: tab?.favIconUrl ?? null,
+
+        // 页面 / frame 相关
+        pageUrl: info.pageUrl || null,
+        frameUrl: info.frameUrl || null,
+        frameId: info.frameId ?? null,
+
+        // 文本 / 链接 / 图片 等上下文信息
+        selectionText: info.selectionText || null,
+        linkUrl: info.linkUrl || null,
+        linkText: info.linkText || null,
+        srcUrl: info.srcUrl || null,
+        mediaType: info.mediaType || null,
+        editable: info.editable ?? null,
+
+        // 触发菜单的更多元信息
+        menuItemId: info.menuItemId,
+        parentMenuItemId: info.parentMenuItemId || null,
+        contexts: info.contexts || undefined
+      };
+
+      // 打印到扩展的日志和普通控制台，方便调试查看
+      log('[ContextMenu] 打印当前页面信息:', pageInfo);
+      console.log('[YiShe][PageInfo]', pageInfo);
+    } else {
+      // 目前只有一个菜单项，这里只是防御性日志
+      log('[ContextMenu] 未知的菜单项 ID（目前应不存在）:', info.menuItemId);
+    }
+  } catch (error) {
+    log('[ContextMenu] 处理右键菜单点击失败:', serializeError(error));
+  }
+});
+
+// 在插件安装或启动时初始化右键菜单
+chrome.runtime.onInstalled.addListener(() => {
+  initContextMenus();
+});
+
+// 在 Service Worker 启动时也初始化右键菜单（防止菜单丢失）
+if (chrome.runtime.onStartup) {
+  chrome.runtime.onStartup.addListener(() => {
+    initContextMenus();
+  });
+}
+
+// 在初始化函数中也调用一次（确保菜单存在）
+try {
+  initContextMenus();
+} catch (error) {
+  log('[ContextMenu] 初始化右键菜单失败:', serializeError(error));
+}
 
