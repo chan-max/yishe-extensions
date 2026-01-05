@@ -476,3 +476,199 @@ window.CoreDOMUtils = {
     window.__coreToastMessageListenerAttached = true;
   }
 })();
+
+// =============================================================
+// 全局 Loading 系统（CoreLoading）
+// =============================================================
+
+;(function initCoreLoading() {
+  if (window.CoreLoading) return;
+
+  const LOADING_CONTAINER_ID = 'core-loading-container';
+  const LOADING_BASE_CLASS = 'core-loading';
+
+  // 注入样式，只注入一次
+  if (!document.getElementById('core-loading-styles')) {
+    const style = document.createElement('style');
+    style.id = 'core-loading-styles';
+    style.textContent = `
+      #${LOADING_CONTAINER_ID} {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 2147483646;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(4px);
+        pointer-events: auto;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+
+      #${LOADING_CONTAINER_ID}.core-loading-active {
+        display: flex;
+      }
+
+      .${LOADING_BASE_CLASS} {
+        background: rgba(15, 23, 42, 0.95);
+        border-radius: 16px;
+        padding: 24px 32px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        min-width: 200px;
+        max-width: 320px;
+        animation: core-loading-fade-in 0.2s ease-out;
+      }
+
+      .core-loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid rgba(148, 163, 184, 0.3);
+        border-top-color: #3b82f6;
+        border-radius: 50%;
+        animation: core-loading-spin 0.8s linear infinite;
+      }
+
+      .core-loading-message {
+        color: #f8fafc;
+        font-size: 14px;
+        font-weight: 500;
+        text-align: center;
+        line-height: 1.5;
+        margin: 0;
+      }
+
+      @keyframes core-loading-fade-in {
+        from {
+          opacity: 0;
+          transform: scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      @keyframes core-loading-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes core-loading-fade-out {
+        from {
+          opacity: 1;
+          transform: scale(1);
+        }
+        to {
+          opacity: 0;
+          transform: scale(0.95);
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function getContainer() {
+    let container = document.getElementById(LOADING_CONTAINER_ID);
+    if (!container) {
+      container = document.createElement('div');
+      container.id = LOADING_CONTAINER_ID;
+      document.body.appendChild(container);
+    }
+    return container;
+  }
+
+  function createLoadingElement(message) {
+    const container = getContainer();
+    
+    // 如果已存在，先移除
+    const existing = container.querySelector(`.${LOADING_BASE_CLASS}`);
+    if (existing) {
+      existing.remove();
+    }
+
+    const loading = document.createElement('div');
+    loading.className = LOADING_BASE_CLASS;
+
+    const spinner = document.createElement('div');
+    spinner.className = 'core-loading-spinner';
+
+    const messageEl = document.createElement('div');
+    messageEl.className = 'core-loading-message';
+    messageEl.textContent = message || '处理中...';
+
+    loading.appendChild(spinner);
+    loading.appendChild(messageEl);
+    container.appendChild(loading);
+
+    return loading;
+  }
+
+  function showLoading(message = '处理中...') {
+    const container = getContainer();
+    createLoadingElement(message);
+    container.classList.add('core-loading-active');
+  }
+
+  function hideLoading() {
+    const container = getContainer();
+    if (!container) return;
+    
+    container.classList.remove('core-loading-active');
+    
+    // 添加淡出动画
+    const loading = container.querySelector(`.${LOADING_BASE_CLASS}`);
+    if (loading) {
+      loading.style.animation = 'core-loading-fade-out 0.2s ease-in forwards';
+      setTimeout(() => {
+        if (loading.parentNode) {
+          loading.parentNode.removeChild(loading);
+        }
+      }, 200);
+    }
+  }
+
+  // 暴露全局 Loading API
+  window.CoreLoading = {
+    show: showLoading,
+    hide: hideLoading,
+    isVisible() {
+      const container = getContainer();
+      return container && container.classList.contains('core-loading-active');
+    }
+  };
+
+  // 支持 background 通过 runtime 消息触发：
+  // chrome.tabs.sendMessage(tabId, {
+  //   type: 'core:loading',
+  //   action: 'show' | 'hide',
+  //   message: '加载中...'
+  // })
+  if (!window.__coreLoadingMessageListenerAttached && chrome?.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request && request.type === 'core:loading') {
+        const action = request.action || 'show';
+        const message = request.message || '处理中...';
+        
+        if (action === 'show') {
+          showLoading(message);
+        } else if (action === 'hide') {
+          hideLoading();
+        }
+        
+        sendResponse && sendResponse({ ok: true });
+        return true;
+      }
+      return false;
+    });
+    window.__coreLoadingMessageListenerAttached = true;
+  }
+})();

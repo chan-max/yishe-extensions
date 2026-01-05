@@ -1766,14 +1766,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         pageTitle
       });
 
-      // 点击后立即给出“开始处理”的提示
+      // 显示 loading 状态
       if (tab && tab.id != null) {
         chrome.tabs.sendMessage(
           tab.id,
           {
-            type: 'core:toast',
-            level: 'info',
-            message: '已开始上传图片到 YiShe 素材库...'
+            type: 'core:loading',
+            action: 'show',
+            message: '正在上传图片到 YiShe 素材库...'
           },
           () => {}
         );
@@ -1801,6 +1801,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           const text = await response.text().catch(() => '');
           log('[ContextMenu] 上传图片到爬图库失败，HTTP 状态异常:', response.status, text);
           console.error('[YiShe][UploadImage] 上传失败:', response.status, text);
+
+          // 隐藏 loading 状态
+          if (tab && tab.id != null) {
+            chrome.tabs.sendMessage(
+              tab.id,
+              {
+                type: 'core:loading',
+                action: 'hide'
+              },
+              () => {}
+            );
+          }
 
           // 后台错误提示（执行失败）
           if (tab && tab.id != null) {
@@ -1832,6 +1844,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           result
         });
 
+        // 隐藏 loading 状态
+        if (tab && tab.id != null) {
+          chrome.tabs.sendMessage(
+            tab.id,
+            {
+              type: 'core:loading',
+              action: 'hide'
+            },
+            () => {}
+          );
+        }
+
         // 成功提示（执行成功）
         if (tab && tab.id != null) {
           chrome.tabs.sendMessage(
@@ -1847,6 +1871,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       } catch (error) {
         log('[ContextMenu] 调用上传接口异常:', serializeError(error));
         console.error('[YiShe][UploadImage] 调用上传接口异常:', error);
+
+        // 隐藏 loading 状态
+        if (tab && tab.id != null) {
+          chrome.tabs.sendMessage(
+            tab.id,
+            {
+              type: 'core:loading',
+              action: 'hide'
+            },
+            () => {}
+          );
+        }
 
         // 异常提示（执行中出现意外错误）
         if (tab && tab.id != null) {
