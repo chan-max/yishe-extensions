@@ -1631,12 +1631,19 @@ function initContextMenus() {
       log('[ContextMenu] 清除菜单项:', chrome.runtime.lastError.message);
     }
 
-    // 只创建一个简单菜单项：打印当前页面信息
+    // 1）打印当前页面信息（任何位置都能用）
     chrome.contextMenus.create({
       id: 'print-page-info',
       title: '打印当前页面信息',
       // 使用 all，保证无论在页面、链接、图片、选中文本等位置右键都能看到
       contexts: ['all']
+    });
+
+    // 2）上传图片到爬图库（只在图片上右键时显示）
+    chrome.contextMenus.create({
+      id: 'upload-image-to-crawler',
+      title: '上传图片到 YiShe 素材库',
+      contexts: ['image']
     });
 
     log('[ContextMenu] 右键菜单已初始化（仅打印当前页面信息）');
@@ -1693,6 +1700,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
     log('[ContextMenu] 右键菜单项被点击:', info.menuItemId);
 
+    // 1）打印当前页面信息（调试用）
     if (info.menuItemId === 'print-page-info') {
       // 收集当前页面及点击上下文的关键信息
       const pageInfo = {
@@ -1724,8 +1732,139 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       // 打印到扩展的日志和普通控制台，方便调试查看
       log('[ContextMenu] 打印当前页面信息:', pageInfo);
       console.log('[YiShe][PageInfo]', pageInfo);
+      return;
+    }
+
+    // 2）上传图片到 YiShe 爬图库
+    if (info.menuItemId === 'upload-image-to-crawler') {
+      const imageUrl = info.srcUrl || null;
+      const pageUrl = info.pageUrl || tab?.url || null;
+      const pageTitle = tab?.title || null;
+
+      if (!imageUrl) {
+        log('[ContextMenu] 上传图片失败：未获取到图片地址 srcUrl');
+        console.warn('[YiShe][UploadImage] 缺少图片地址 srcUrl，info =', info);
+
+        // 没有拿到图片地址时给出警告提示
+        if (tab && tab.id != null) {
+          chrome.tabs.sendMessage(
+            tab.id,
+            {
+              type: 'core:toast',
+              level: 'warning',
+              message: '无法识别当前图片地址，暂时无法上传'
+            },
+            () => {}
+          );
+        }
+        return;
+      }
+
+      log('[ContextMenu] 准备上传图片到爬图库:', {
+        imageUrl,
+        pageUrl,
+        pageTitle
+      });
+
+      // 点击后立即给出“开始处理”的提示
+      if (tab && tab.id != null) {
+        chrome.tabs.sendMessage(
+          tab.id,
+          {
+            type: 'core:toast',
+            level: 'info',
+            message: '已开始上传图片到 YiShe 素材库...'
+          },
+          () => {}
+        );
+      }
+
+      try {
+        // 调用本地 yishe-client 提供的接口
+        const payload = {
+          url: imageUrl,
+          // 这些字段目前在后端是可选的，你后续可以在这里填更多信息
+          name: '',          // 可以以后改成从图片 alt / 描述推断
+          description: '',   // 暂时留空，由服务端或后续编辑补充
+          keywords: ''       // 暂时留空
+        };
+
+        const response = await fetch('http://localhost:1519/api/crawler-material-upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          log('[ContextMenu] 上传图片到爬图库失败，HTTP 状态异常:', response.status, text);
+          console.error('[YiShe][UploadImage] 上传失败:', response.status, text);
+
+          // 后台错误提示（执行失败）
+          if (tab && tab.id != null) {
+            chrome.tabs.sendMessage(
+              tab.id,
+              {
+                type: 'core:toast',
+                level: 'error',
+                message: '上传图片失败（本地服务返回错误）'
+              },
+              () => {}
+            );
+          }
+          return;
+        }
+
+        let result = null;
+        try {
+          result = await response.json();
+        } catch (e) {
+          log('[ContextMenu] 解析上传接口响应失败:', serializeError(e));
+        }
+
+        log('[ContextMenu] 图片上传接口响应:', result);
+        console.log('[YiShe][UploadImage] 图片上传完成:', {
+          imageUrl,
+          pageUrl,
+          pageTitle,
+          result
+        });
+
+        // 成功提示（执行成功）
+        if (tab && tab.id != null) {
+          chrome.tabs.sendMessage(
+            tab.id,
+            {
+              type: 'core:toast',
+              level: 'success',
+              message: '图片已上传到 YiShe 素材库'
+            },
+            () => {}
+          );
+        }
+      } catch (error) {
+        log('[ContextMenu] 调用上传接口异常:', serializeError(error));
+        console.error('[YiShe][UploadImage] 调用上传接口异常:', error);
+
+        // 异常提示（执行中出现意外错误）
+        if (tab && tab.id != null) {
+          chrome.tabs.sendMessage(
+            tab.id,
+            {
+              type: 'core:toast',
+              level: 'error',
+              message: '上传图片时发生异常，请稍后重试'
+            },
+            () => {}
+          );
+        }
+      }
+
+      return;
     } else {
-      // 目前只有一个菜单项，这里只是防御性日志
+      // 其他未知菜单项（目前理论上不会出现）
       log('[ContextMenu] 未知的菜单项 ID（目前应不存在）:', info.menuItemId);
     }
   } catch (error) {
