@@ -57,6 +57,15 @@ const API_ENDPOINTS = {
     GET_BY_USER: '/common-url/user/:userId',
     GET_BY_CATEGORY: '/common-url/category/:category',
   },
+  // 句子管理相关
+  SENTENCE: {
+    CREATE: '/sentences',
+    LIST: '/sentences/page',
+    GET: '/sentences/:id',
+    UPDATE: '/sentences/:id',
+    DELETE: '/sentences/:id',
+    AI_ANALYZE: '/sentences/ai-analyze',
+  },
   // 爬虫相关
   CRAWLER: {
     MATERIAL_ADD: '/crawler/material/add',

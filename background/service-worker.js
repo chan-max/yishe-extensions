@@ -434,6 +434,203 @@ async function saveWebsiteToServer(websiteData, tab) {
   }
 }
 
+/**
+ * 保存文字信息到服务端（句子管理）
+ * @param {Object} textData - 文字数据
+ * @param {string} textData.content - 文字内容（必需）
+ * @param {string} [textData.description] - 文字描述
+ * @param {string} [textData.keywords] - 关键词
+ * @param {Object} tab - 标签页对象
+ */
+async function saveTextToServer(textData, tab) {
+  try {
+    // 1. 检查是否已登录
+    const authState = await storageGet([AUTH_TOKEN_KEY, AUTH_USER_INFO_KEY]);
+    const token = authState[AUTH_TOKEN_KEY];
+    const userInfo = authState[AUTH_USER_INFO_KEY];
+
+    if (!token || !userInfo) {
+      // 隐藏 loading 状态
+      if (tab && tab.id != null) {
+        chrome.tabs.sendMessage(
+          tab.id,
+          {
+            type: 'core:loading',
+            action: 'hide'
+          },
+          () => {}
+        );
+      }
+      // 显示错误提示
+      if (tab && tab.id != null) {
+        chrome.tabs.sendMessage(
+          tab.id,
+          {
+            type: 'core:toast',
+            level: 'error',
+            message: '请先登录后再保存文字'
+          },
+          () => {}
+        );
+      }
+      throw new Error('请先登录后再保存文字');
+    }
+
+    // 2. 获取 API 基础地址和接口路径
+    const devMode = Boolean((await storageGet([STORAGE_DEV_MODE_KEY]))[STORAGE_DEV_MODE_KEY]);
+    const apiBaseUrl = devMode
+      ? ((typeof self !== 'undefined' && self.ApiConfig?.DEV_CONFIG?.API_BASE_URL) || 'http://localhost:1520/api')
+      : ((typeof self !== 'undefined' && self.ApiConfig?.PROD_CONFIG?.API_BASE_URL) || 'https://1s.design:1520/api');
+    
+    const createPath = (typeof self !== 'undefined' && self.ApiConfig?.API_ENDPOINTS?.SENTENCE?.CREATE) || '/sentences';
+    const fullUrl = `${apiBaseUrl}${createPath}`;
+
+    // 3. 构建请求数据
+    const requestData = {
+      content: textData.content || '',
+      description: textData.description || '',
+      keywords: textData.keywords || '',
+    };
+
+    // 验证内容不能为空
+    if (!requestData.content || requestData.content.trim().length === 0) {
+      throw new Error('文字内容不能为空');
+    }
+
+    log('[SaveText] 准备保存文字:', {
+      content: requestData.content.substring(0, 50) + (requestData.content.length > 50 ? '...' : ''),
+      description: requestData.description,
+      keywords: requestData.keywords
+    });
+
+    // 4. 发送请求
+    const response = await fetch(fullUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(requestData),
+    });
+
+    // 5. 处理响应
+    const responseText = await response.text().catch(() => '');
+    let responseData;
+    try {
+      responseData = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      responseData = { message: responseText || `HTTP ${response.status}` };
+    }
+
+    // 6. 检查响应状态
+    if (!response.ok) {
+      // 解析错误消息
+      let errorMessage = '保存文字失败';
+      if (responseData.message) {
+        if (Array.isArray(responseData.message)) {
+          errorMessage = responseData.message.join(', ');
+        } else if (typeof responseData.message === 'string') {
+          errorMessage = responseData.message;
+        }
+      } else if (responseData.msg) {
+        if (Array.isArray(responseData.msg)) {
+          errorMessage = responseData.msg.join(', ');
+        } else if (typeof responseData.msg === 'string') {
+          errorMessage = responseData.msg;
+        }
+      } else {
+        errorMessage = `保存失败: HTTP ${response.status}`;
+      }
+
+      // 隐藏 loading 状态
+      if (tab && tab.id != null) {
+        chrome.tabs.sendMessage(
+          tab.id,
+          {
+            type: 'core:loading',
+            action: 'hide'
+          },
+          () => {}
+        );
+      }
+
+      // 显示错误提示
+      if (tab && tab.id != null) {
+        chrome.tabs.sendMessage(
+          tab.id,
+          {
+            type: 'core:toast',
+            level: 'error',
+            message: errorMessage
+          },
+          () => {}
+        );
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    // 7. 成功处理
+    log('[SaveText] 文字保存成功:', responseData);
+
+    // 隐藏 loading 状态
+    if (tab && tab.id != null) {
+      chrome.tabs.sendMessage(
+        tab.id,
+        {
+          type: 'core:loading',
+          action: 'hide'
+        },
+        () => {}
+      );
+    }
+
+    // 成功提示
+    if (tab && tab.id != null) {
+      chrome.tabs.sendMessage(
+        tab.id,
+        {
+          type: 'core:toast',
+          level: 'success',
+          message: '文字已保存到 YiShe 句子管理'
+        },
+        () => {}
+      );
+    }
+
+    return responseData;
+  } catch (error) {
+    log('[SaveText] 保存文字异常:', serializeError(error));
+    
+    // 确保在异常情况下也隐藏 loading 状态
+    if (tab && tab.id != null) {
+      chrome.tabs.sendMessage(
+        tab.id,
+        {
+          type: 'core:loading',
+          action: 'hide'
+        },
+        () => {}
+      );
+    }
+
+    // 如果还没有显示错误提示，则显示
+    if (tab && tab.id != null) {
+      chrome.tabs.sendMessage(
+        tab.id,
+        {
+          type: 'core:toast',
+          level: 'error',
+          message: error.message || '保存文字失败，请稍后重试'
+        },
+        () => {}
+      );
+    }
+
+    throw error;
+  }
+}
+
 
 async function handleControlFeatureExecute(request) {
   const featureId = request?.featureId;
@@ -1801,7 +1998,14 @@ function initContextMenus() {
       contexts: ['all']
     });
 
-    // 2）上传图片到爬图库（只在图片上右键时显示）
+    // 2）保存选中文字（只在选中文字时显示）
+    chrome.contextMenus.create({
+      id: 'save-selected-text',
+      title: '保存选中文字到 YiShe',
+      contexts: ['selection']
+    });
+
+    // 3）上传图片到爬图库（只在图片上右键时显示）
     chrome.contextMenus.create({
       id: 'upload-image-to-crawler',
       title: '上传图片到 YiShe 素材库',
@@ -1922,7 +2126,65 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       return;
     }
 
-    // 2）上传图片到 YiShe 爬图库
+    // 2）保存选中文字到 YiShe
+    if (info.menuItemId === 'save-selected-text') {
+      const selectedText = info.selectionText || null;
+      const pageUrl = info.pageUrl || tab?.url || null;
+      const pageTitle = tab?.title || null;
+
+      if (!selectedText || selectedText.trim().length === 0) {
+        log('[ContextMenu] 保存文字失败：未获取到选中文字');
+        console.warn('[YiShe][SaveText] 缺少选中文字，info =', info);
+
+        if (tab && tab.id != null) {
+          chrome.tabs.sendMessage(
+            tab.id,
+            {
+              type: 'core:toast',
+              level: 'warning',
+              message: '未选中文字，无法保存'
+            },
+            () => {}
+          );
+        }
+        return;
+      }
+
+      log('[ContextMenu] 准备保存文字到 YiShe:', {
+        selectedText: selectedText.substring(0, 50) + (selectedText.length > 50 ? '...' : ''),
+        pageUrl,
+        pageTitle
+      });
+
+      // 显示 loading 状态
+      if (tab && tab.id != null) {
+        chrome.tabs.sendMessage(
+          tab.id,
+          {
+            type: 'core:loading',
+            action: 'show',
+            message: '正在保存文字到 YiShe...'
+          },
+          () => {}
+        );
+      }
+
+      // 异步保存文字信息
+      // 注意：错误处理和 loading 状态管理已在 saveTextToServer 函数内部处理
+      saveTextToServer({
+        content: selectedText.trim(),
+        description: pageTitle ? `来自：${pageTitle}` : '',
+        keywords: '',
+      }, tab).catch((error) => {
+        // 错误已在 saveTextToServer 函数内部处理，这里只记录日志
+        log('[ContextMenu] 保存文字失败:', serializeError(error));
+        console.error('[YiShe][SaveText] 保存文字失败:', error);
+      });
+
+      return;
+    }
+
+    // 3）上传图片到 YiShe 爬图库
     if (info.menuItemId === 'upload-image-to-crawler') {
       const imageUrl = info.srcUrl || null;
       const pageUrl = info.pageUrl || tab?.url || null;
