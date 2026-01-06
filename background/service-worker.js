@@ -231,6 +231,38 @@ async function sendFeishuNotification(lines) {
 }
 
 // =============================================================
+// 上传状态跟踪（防止重复提交）
+// =============================================================
+
+// 正在上传的图片URL集合，用于防止重复提交
+const uploadingImages = new Set();
+
+/**
+ * 检查图片是否正在上传
+ * @param {string} imageUrl - 图片URL
+ * @returns {boolean} - 是否正在上传
+ */
+function isImageUploading(imageUrl) {
+  return uploadingImages.has(imageUrl);
+}
+
+/**
+ * 标记图片开始上传
+ * @param {string} imageUrl - 图片URL
+ */
+function markImageUploading(imageUrl) {
+  uploadingImages.add(imageUrl);
+}
+
+/**
+ * 标记图片上传完成（成功或失败）
+ * @param {string} imageUrl - 图片URL
+ */
+function markImageUploadComplete(imageUrl) {
+  uploadingImages.delete(imageUrl);
+}
+
+// =============================================================
 // 通用 UI 工具函数（Loading 和 Toast）
 // =============================================================
 
@@ -2038,11 +2070,21 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         return;
       }
 
+      // 检查是否正在上传相同的图片
+      if (isImageUploading(imageUrl)) {
+        log('[ContextMenu] 图片正在上传中，跳过重复提交:', imageUrl);
+        showToast(tabId, 'info', '图片正在上传中，请稍候...');
+        return;
+      }
+
       log('[ContextMenu] 准备上传图片到爬图库:', {
         imageUrl,
         pageUrl,
         pageTitle
       });
+
+      // 标记开始上传
+      markImageUploading(imageUrl);
 
       // 显示 loading 状态
       showLoading(tabId, 'show', '正在上传图片到 YiShe 素材库...');
@@ -2076,6 +2118,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           console.error('[YiShe][UploadImage] 上传失败:', response.status, text);
           showLoading(tabId, 'hide');
           showToast(tabId, 'error', '上传图片失败（本地服务返回错误）');
+          markImageUploadComplete(imageUrl);
           return;
         }
 
@@ -2096,11 +2139,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
         showLoading(tabId, 'hide');
         showToast(tabId, 'success', '图片已上传到 YiShe 素材库');
+        markImageUploadComplete(imageUrl);
       } catch (error) {
         log('[ContextMenu] 调用上传接口异常:', serializeError(error));
         console.error('[YiShe][UploadImage] 调用上传接口异常:', error);
         showLoading(tabId, 'hide');
         showToast(tabId, 'error', '上传图片时发生异常，请稍后重试');
+        markImageUploadComplete(imageUrl);
       }
 
       return;
