@@ -4,7 +4,7 @@
 
   /**
    * 消息处理器映射表
-   * key: 消息命令类型，如 'pinterest/scrape'
+   * key: 消息命令类型
    * value: 处理器对象
    */
   const handlers = new Map();
@@ -76,7 +76,7 @@
   }
 
   // 自动注册已加载的处理器
-  // 当前已移除 Pinterest / Sora 等爬取功能，这里暂不做自动注册。
+  // 当前暂不做自动注册，需要手动注册处理器。
   // 如后续有新的命令处理器，可在其他脚本中通过 Router.register 手动注册：
   //   global.MessageHandlers.Router.register('your/command', yourHandler);
 

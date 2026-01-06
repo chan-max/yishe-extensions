@@ -149,7 +149,7 @@ function serializeError(error) {
   }
 }
 
-// guessExtension 和 uploadMaterialToServer 已迁移到 handlers/base.js 和 handlers/pinterest.js
+// guessExtension 和 uploadMaterialToServer 已迁移到 handlers/base.js
 // 以下函数保留用于兼容性，但建议使用 handlers 中的实现
 
 function guessExtension(url, contentType) {
@@ -220,20 +220,10 @@ async function sendFeishuNotification(lines) {
   });
 }
 
-// processPinterestUploadCommand 已迁移到 handlers/pinterest.js
 
 async function handleControlFeatureExecute(request) {
   const featureId = request?.featureId;
   const payload = request?.payload || {};
-
-  // Pinterest 功能已迁移到 handlers，这里保留定时任务接口的兼容性
-  if (featureId === 'pinterest-scraper') {
-    if (payload.command === 'pinterest/schedule') {
-      return await handlePinterestSchedule(payload);
-    }
-    // 其他 Pinterest 命令已通过消息路由器处理
-    return { success: false, error: '未知的 Pinterest 功能指令' };
-  }
 
   return { success: false, error: '未识别的功能组件' };
 }
@@ -1284,7 +1274,6 @@ function handleAdminMessage(data) {
   }
 }
 
-// handlePinterestScrapeCommand 和 executePinterestScrapeWithParams 已迁移到 handlers/pinterest.js
 
 async function ensureEndpoint() {
   try {
@@ -1368,37 +1357,6 @@ function setEndpoint(newEndpoint, callback) {
     });
 }
 
-async function restorePinterestSchedule() {
-  try {
-    const config = await storageGet([PINTEREST_SCHEDULE_STORAGE_KEY]);
-    const scheduleConfig = config[PINTEREST_SCHEDULE_STORAGE_KEY];
-    
-    if (!scheduleConfig || !scheduleConfig.params) {
-      return;
-    }
-    
-    const intervalMinutes = scheduleConfig.intervalMinutes || 60;
-    
-    // 检查定时任务是否已存在
-    const alarm = await new Promise((resolve) => {
-      chrome.alarms.get(PINTEREST_SCHEDULE_ALARM_NAME, (alarm) => {
-        resolve(alarm);
-      });
-    });
-    
-    // 如果定时任务不存在，重新创建
-    if (!alarm) {
-      chrome.alarms.create(PINTEREST_SCHEDULE_ALARM_NAME, {
-        periodInMinutes: intervalMinutes,
-      });
-      log(`[Pinterest] 定时任务已恢复：每 ${intervalMinutes} 分钟执行一次`);
-    } else {
-      log(`[Pinterest] 定时任务已存在，无需恢复`);
-    }
-  } catch (error) {
-    log('[Pinterest] 恢复定时任务失败:', serializeError(error));
-  }
-}
 
 async function initialize() {
   try {
@@ -1608,15 +1566,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 });
 
-// 监听定时任务触发
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === PINTEREST_SCHEDULE_ALARM_NAME) {
-    log('[Pinterest] 定时任务触发:', alarm);
-    executeScheduledPinterestScrape().catch((error) => {
-      log('[Pinterest] 定时任务执行失败:', serializeError(error));
-    });
-  }
-});
 
 // ==================== 右键菜单功能 ====================
 
