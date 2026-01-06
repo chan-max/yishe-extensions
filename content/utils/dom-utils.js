@@ -428,6 +428,9 @@ window.CoreDOMUtils = {
     rightEl.addEventListener('click', () => {
       dismissToast(toast);
     });
+    
+    // 保存 toast 引用，方便后续操作
+    toast._closeButton = rightEl;
 
     // 进度条动画（使用 CSS transform 缩放）
     const totalDuration = duration;
@@ -439,6 +442,12 @@ window.CoreDOMUtils = {
   function dismissToast(toast) {
     if (!toast || toast._closing) return;
     toast._closing = true;
+    
+    // 从 activeToasts 中移除（如果存在）
+    if (toast._toastKey && activeToasts.has(toast._toastKey)) {
+      activeToasts.delete(toast._toastKey);
+    }
+    
     toast.style.animation = 'core-toast-slide-out 0.25s cubic-bezier(0.4, 0, 1, 1) forwards';
     setTimeout(() => {
       if (toast.parentNode) {
@@ -464,6 +473,9 @@ window.CoreDOMUtils = {
     document.head.appendChild(style);
   }
 
+  // 用于跟踪正在显示的 toast，防止重复显示相同消息
+  const activeToasts = new Map();
+
   function showToast(options) {
     const {
       message = '',
@@ -474,12 +486,26 @@ window.CoreDOMUtils = {
 
     if (!message) return;
 
+    // 创建唯一标识符，用于检测重复消息
+    const toastKey = `${type}:${message}`;
+    
+    // 如果相同的消息正在显示，则不重复创建
+    if (activeToasts.has(toastKey)) {
+      return;
+    }
+
     const toast = createToastElement({
       type,
       message,
       title,
       duration
     });
+
+    // 在 toast 元素上保存 key，方便后续移除
+    toast._toastKey = toastKey;
+
+    // 记录正在显示的 toast
+    activeToasts.set(toastKey, toast);
 
     // 自动关闭
     const timer = setTimeout(() => {

@@ -230,6 +230,95 @@ async function sendFeishuNotification(lines) {
   });
 }
 
+// =============================================================
+// 通用 UI 工具函数（Loading 和 Toast）
+// =============================================================
+
+/**
+ * 显示或隐藏 Loading 蒙层
+ * @param {number|null} tabId - 标签页 ID，如果为 null 则不发送消息
+ * @param {string} action - 'show' 或 'hide'
+ * @param {string} [message] - Loading 时显示的消息
+ */
+function showLoading(tabId, action = 'show', message = '处理中...') {
+  if (tabId == null) return;
+  
+  chrome.tabs.sendMessage(
+    tabId,
+    {
+      type: 'core:loading',
+      action: action,
+      message: action === 'show' ? message : undefined
+    },
+    () => {
+      // 忽略错误（content script 可能未加载）
+      if (chrome.runtime.lastError) {
+        // 静默忽略错误
+      }
+    }
+  );
+}
+
+/**
+ * 显示 Toast 消息提示
+ * @param {number|null} tabId - 标签页 ID，如果为 null 则不发送消息
+ * @param {string} level - 'success' | 'error' | 'warning' | 'info'
+ * @param {string} message - 提示消息
+ * @param {number} [duration] - 显示时长（毫秒），默认使用系统默认值
+ */
+function showToast(tabId, level, message, duration) {
+  if (tabId == null || !message) return;
+  
+  chrome.tabs.sendMessage(
+    tabId,
+    {
+      type: 'core:toast',
+      level: level,
+      message: message,
+      duration: duration
+    },
+    () => {
+      // 忽略错误（content script 可能未加载）
+      if (chrome.runtime.lastError) {
+        // 静默忽略错误
+      }
+    }
+  );
+}
+
+/**
+ * 从标签页对象中获取 tabId
+ * @param {Object|null|undefined} tab - 标签页对象
+ * @returns {number|null} - 标签页 ID
+ */
+function getTabId(tab) {
+  return tab && tab.id != null ? tab.id : null;
+}
+
+/**
+ * 解析 API 错误响应，提取错误消息
+ * @param {Object} responseData - API 响应数据
+ * @param {number} statusCode - HTTP 状态码
+ * @param {string} defaultMessage - 默认错误消息
+ * @returns {string} - 解析后的错误消息
+ */
+function parseErrorMessage(responseData, statusCode, defaultMessage = '操作失败') {
+  if (responseData.message) {
+    if (Array.isArray(responseData.message)) {
+      return responseData.message.join(', ');
+    } else if (typeof responseData.message === 'string') {
+      return responseData.message;
+    }
+  } else if (responseData.msg) {
+    if (Array.isArray(responseData.msg)) {
+      return responseData.msg.join(', ');
+    } else if (typeof responseData.msg === 'string') {
+      return responseData.msg;
+    }
+  }
+  return `${defaultMessage}: HTTP ${statusCode}`;
+}
+
 /**
  * 保存网站信息到服务端
  * @param {Object} websiteData - 网站数据
@@ -241,6 +330,8 @@ async function sendFeishuNotification(lines) {
  * @param {Object} tab - 标签页对象
  */
 async function saveWebsiteToServer(websiteData, tab) {
+  const tabId = getTabId(tab);
+  
   try {
     // 1. 检查是否已登录
     const authState = await storageGet([AUTH_TOKEN_KEY, AUTH_USER_INFO_KEY]);
@@ -248,29 +339,8 @@ async function saveWebsiteToServer(websiteData, tab) {
     const userInfo = authState[AUTH_USER_INFO_KEY];
 
     if (!token || !userInfo) {
-      // 隐藏 loading 状态
-      if (tab && tab.id != null) {
-        chrome.tabs.sendMessage(
-          tab.id,
-          {
-            type: 'core:loading',
-            action: 'hide'
-          },
-          () => {}
-        );
-      }
-      // 显示错误提示
-      if (tab && tab.id != null) {
-        chrome.tabs.sendMessage(
-          tab.id,
-          {
-            type: 'core:toast',
-            level: 'error',
-            message: '请先登录后再保存网站'
-          },
-          () => {}
-        );
-      }
+      showLoading(tabId, 'hide');
+      showToast(tabId, 'error', '请先登录后再保存网站');
       throw new Error('请先登录后再保存网站');
     }
 
@@ -327,109 +397,22 @@ async function saveWebsiteToServer(websiteData, tab) {
 
     // 6. 检查响应状态
     if (!response.ok) {
-      // 解析错误消息
-      let errorMessage = '保存网站失败';
-      if (responseData.message) {
-        if (Array.isArray(responseData.message)) {
-          errorMessage = responseData.message.join(', ');
-        } else if (typeof responseData.message === 'string') {
-          errorMessage = responseData.message;
-        }
-      } else if (responseData.msg) {
-        if (Array.isArray(responseData.msg)) {
-          errorMessage = responseData.msg.join(', ');
-        } else if (typeof responseData.msg === 'string') {
-          errorMessage = responseData.msg;
-        }
-      } else {
-        errorMessage = `保存失败: HTTP ${response.status}`;
-      }
-
-      // 隐藏 loading 状态
-      if (tab && tab.id != null) {
-        chrome.tabs.sendMessage(
-          tab.id,
-          {
-            type: 'core:loading',
-            action: 'hide'
-          },
-          () => {}
-        );
-      }
-
-      // 显示错误提示
-      if (tab && tab.id != null) {
-        chrome.tabs.sendMessage(
-          tab.id,
-          {
-            type: 'core:toast',
-            level: 'error',
-            message: errorMessage
-          },
-          () => {}
-        );
-      }
-
+      const errorMessage = parseErrorMessage(responseData, response.status, '保存网站失败');
+      showLoading(tabId, 'hide');
+      showToast(tabId, 'error', errorMessage);
       throw new Error(errorMessage);
     }
 
     // 7. 成功处理
     log('[SaveWebsite] 网站保存成功:', responseData);
-
-    // 隐藏 loading 状态
-    if (tab && tab.id != null) {
-      chrome.tabs.sendMessage(
-        tab.id,
-        {
-          type: 'core:loading',
-          action: 'hide'
-        },
-        () => {}
-      );
-    }
-
-    // 成功提示
-    if (tab && tab.id != null) {
-      chrome.tabs.sendMessage(
-        tab.id,
-        {
-          type: 'core:toast',
-          level: 'success',
-          message: '网站已保存到 YiShe'
-        },
-        () => {}
-      );
-    }
+    showLoading(tabId, 'hide');
+    showToast(tabId, 'success', '网站已保存到 YiShe');
 
     return responseData;
   } catch (error) {
     log('[SaveWebsite] 保存网站异常:', serializeError(error));
-    
-    // 确保在异常情况下也隐藏 loading 状态
-    if (tab && tab.id != null) {
-      chrome.tabs.sendMessage(
-        tab.id,
-        {
-          type: 'core:loading',
-          action: 'hide'
-        },
-        () => {}
-      );
-    }
-
-    // 如果还没有显示错误提示，则显示
-    if (tab && tab.id != null) {
-      chrome.tabs.sendMessage(
-        tab.id,
-        {
-          type: 'core:toast',
-          level: 'error',
-          message: error.message || '保存网站失败，请稍后重试'
-        },
-        () => {}
-      );
-    }
-
+    showLoading(tabId, 'hide');
+    showToast(tabId, 'error', error.message || '保存网站失败，请稍后重试');
     throw error;
   }
 }
@@ -443,6 +426,8 @@ async function saveWebsiteToServer(websiteData, tab) {
  * @param {Object} tab - 标签页对象
  */
 async function saveTextToServer(textData, tab) {
+  const tabId = getTabId(tab);
+  
   try {
     // 1. 检查是否已登录
     const authState = await storageGet([AUTH_TOKEN_KEY, AUTH_USER_INFO_KEY]);
@@ -450,29 +435,8 @@ async function saveTextToServer(textData, tab) {
     const userInfo = authState[AUTH_USER_INFO_KEY];
 
     if (!token || !userInfo) {
-      // 隐藏 loading 状态
-      if (tab && tab.id != null) {
-        chrome.tabs.sendMessage(
-          tab.id,
-          {
-            type: 'core:loading',
-            action: 'hide'
-          },
-          () => {}
-        );
-      }
-      // 显示错误提示
-      if (tab && tab.id != null) {
-        chrome.tabs.sendMessage(
-          tab.id,
-          {
-            type: 'core:toast',
-            level: 'error',
-            message: '请先登录后再保存文字'
-          },
-          () => {}
-        );
-      }
+      showLoading(tabId, 'hide');
+      showToast(tabId, 'error', '请先登录后再保存文字');
       throw new Error('请先登录后再保存文字');
     }
 
@@ -524,109 +488,22 @@ async function saveTextToServer(textData, tab) {
 
     // 6. 检查响应状态
     if (!response.ok) {
-      // 解析错误消息
-      let errorMessage = '保存文字失败';
-      if (responseData.message) {
-        if (Array.isArray(responseData.message)) {
-          errorMessage = responseData.message.join(', ');
-        } else if (typeof responseData.message === 'string') {
-          errorMessage = responseData.message;
-        }
-      } else if (responseData.msg) {
-        if (Array.isArray(responseData.msg)) {
-          errorMessage = responseData.msg.join(', ');
-        } else if (typeof responseData.msg === 'string') {
-          errorMessage = responseData.msg;
-        }
-      } else {
-        errorMessage = `保存失败: HTTP ${response.status}`;
-      }
-
-      // 隐藏 loading 状态
-      if (tab && tab.id != null) {
-        chrome.tabs.sendMessage(
-          tab.id,
-          {
-            type: 'core:loading',
-            action: 'hide'
-          },
-          () => {}
-        );
-      }
-
-      // 显示错误提示
-      if (tab && tab.id != null) {
-        chrome.tabs.sendMessage(
-          tab.id,
-          {
-            type: 'core:toast',
-            level: 'error',
-            message: errorMessage
-          },
-          () => {}
-        );
-      }
-
+      const errorMessage = parseErrorMessage(responseData, response.status, '保存文字失败');
+      showLoading(tabId, 'hide');
+      showToast(tabId, 'error', errorMessage);
       throw new Error(errorMessage);
     }
 
     // 7. 成功处理
     log('[SaveText] 文字保存成功:', responseData);
-
-    // 隐藏 loading 状态
-    if (tab && tab.id != null) {
-      chrome.tabs.sendMessage(
-        tab.id,
-        {
-          type: 'core:loading',
-          action: 'hide'
-        },
-        () => {}
-      );
-    }
-
-    // 成功提示
-    if (tab && tab.id != null) {
-      chrome.tabs.sendMessage(
-        tab.id,
-        {
-          type: 'core:toast',
-          level: 'success',
-          message: '文字已保存到 YiShe 句子管理'
-        },
-        () => {}
-      );
-    }
+    showLoading(tabId, 'hide');
+    showToast(tabId, 'success', '文字已保存到 YiShe 句子管理');
 
     return responseData;
   } catch (error) {
     log('[SaveText] 保存文字异常:', serializeError(error));
-    
-    // 确保在异常情况下也隐藏 loading 状态
-    if (tab && tab.id != null) {
-      chrome.tabs.sendMessage(
-        tab.id,
-        {
-          type: 'core:loading',
-          action: 'hide'
-        },
-        () => {}
-      );
-    }
-
-    // 如果还没有显示错误提示，则显示
-    if (tab && tab.id != null) {
-      chrome.tabs.sendMessage(
-        tab.id,
-        {
-          type: 'core:toast',
-          level: 'error',
-          message: error.message || '保存文字失败，请稍后重试'
-        },
-        () => {}
-      );
-    }
-
+    showLoading(tabId, 'hide');
+    showToast(tabId, 'error', error.message || '保存文字失败，请稍后重试');
     throw error;
   }
 }
@@ -2072,21 +1949,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       const pageTitle = tab?.title || null;
       const favIconUrl = tab?.favIconUrl || null;
 
+      const tabId = getTabId(tab);
+      
       if (!pageUrl) {
         log('[ContextMenu] 保存网站失败：未获取到页面地址');
         console.warn('[YiShe][SaveWebsite] 缺少页面地址，info =', info);
-
-        if (tab && tab.id != null) {
-          chrome.tabs.sendMessage(
-            tab.id,
-            {
-              type: 'core:toast',
-              level: 'warning',
-              message: '无法识别当前页面地址，暂时无法保存'
-            },
-            () => {}
-          );
-        }
+        showToast(tabId, 'warning', '无法识别当前页面地址，暂时无法保存');
         return;
       }
 
@@ -2097,17 +1965,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       });
 
       // 显示 loading 状态
-      if (tab && tab.id != null) {
-        chrome.tabs.sendMessage(
-          tab.id,
-          {
-            type: 'core:loading',
-            action: 'show',
-            message: '正在保存网站到 YiShe...'
-          },
-          () => {}
-        );
-      }
+      showLoading(tabId, 'show', '正在保存网站到 YiShe...');
 
       // 异步保存网站信息
       // 注意：错误处理和 loading 状态管理已在 saveWebsiteToServer 函数内部处理
@@ -2132,21 +1990,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       const pageUrl = info.pageUrl || tab?.url || null;
       const pageTitle = tab?.title || null;
 
+      const tabId = getTabId(tab);
+      
       if (!selectedText || selectedText.trim().length === 0) {
         log('[ContextMenu] 保存文字失败：未获取到选中文字');
         console.warn('[YiShe][SaveText] 缺少选中文字，info =', info);
-
-        if (tab && tab.id != null) {
-          chrome.tabs.sendMessage(
-            tab.id,
-            {
-              type: 'core:toast',
-              level: 'warning',
-              message: '未选中文字，无法保存'
-            },
-            () => {}
-          );
-        }
+        showToast(tabId, 'warning', '未选中文字，无法保存');
         return;
       }
 
@@ -2157,17 +2006,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       });
 
       // 显示 loading 状态
-      if (tab && tab.id != null) {
-        chrome.tabs.sendMessage(
-          tab.id,
-          {
-            type: 'core:loading',
-            action: 'show',
-            message: '正在保存文字到 YiShe...'
-          },
-          () => {}
-        );
-      }
+      showLoading(tabId, 'show', '正在保存文字到 YiShe...');
 
       // 异步保存文字信息
       // 注意：错误处理和 loading 状态管理已在 saveTextToServer 函数内部处理
@@ -2190,22 +2029,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       const pageUrl = info.pageUrl || tab?.url || null;
       const pageTitle = tab?.title || null;
 
+      const tabId = getTabId(tab);
+      
       if (!imageUrl) {
         log('[ContextMenu] 上传图片失败：未获取到图片地址 srcUrl');
         console.warn('[YiShe][UploadImage] 缺少图片地址 srcUrl，info =', info);
-
-        // 没有拿到图片地址时给出警告提示
-        if (tab && tab.id != null) {
-          chrome.tabs.sendMessage(
-            tab.id,
-            {
-              type: 'core:toast',
-              level: 'warning',
-              message: '无法识别当前图片地址，暂时无法上传'
-            },
-            () => {}
-          );
-        }
+        showToast(tabId, 'warning', '无法识别当前图片地址，暂时无法上传');
         return;
       }
 
@@ -2216,17 +2045,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       });
 
       // 显示 loading 状态
-      if (tab && tab.id != null) {
-        chrome.tabs.sendMessage(
-          tab.id,
-          {
-            type: 'core:loading',
-            action: 'show',
-            message: '正在上传图片到 YiShe 素材库...'
-          },
-          () => {}
-        );
-      }
+      showLoading(tabId, 'show', '正在上传图片到 YiShe 素材库...');
 
       try {
         // 调用本地 yishe-client 提供的接口
@@ -2255,31 +2074,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           const text = await response.text().catch(() => '');
           log('[ContextMenu] 上传图片到爬图库失败，HTTP 状态异常:', response.status, text);
           console.error('[YiShe][UploadImage] 上传失败:', response.status, text);
-
-          // 隐藏 loading 状态
-          if (tab && tab.id != null) {
-            chrome.tabs.sendMessage(
-              tab.id,
-              {
-                type: 'core:loading',
-                action: 'hide'
-              },
-              () => {}
-            );
-          }
-
-          // 后台错误提示（执行失败）
-          if (tab && tab.id != null) {
-            chrome.tabs.sendMessage(
-              tab.id,
-              {
-                type: 'core:toast',
-                level: 'error',
-                message: '上传图片失败（本地服务返回错误）'
-              },
-              () => {}
-            );
-          }
+          showLoading(tabId, 'hide');
+          showToast(tabId, 'error', '上传图片失败（本地服务返回错误）');
           return;
         }
 
@@ -2298,58 +2094,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           result
         });
 
-        // 隐藏 loading 状态
-        if (tab && tab.id != null) {
-          chrome.tabs.sendMessage(
-            tab.id,
-            {
-              type: 'core:loading',
-              action: 'hide'
-            },
-            () => {}
-          );
-        }
-
-        // 成功提示（执行成功）
-        if (tab && tab.id != null) {
-          chrome.tabs.sendMessage(
-            tab.id,
-            {
-              type: 'core:toast',
-              level: 'success',
-              message: '图片已上传到 YiShe 素材库'
-            },
-            () => {}
-          );
-        }
+        showLoading(tabId, 'hide');
+        showToast(tabId, 'success', '图片已上传到 YiShe 素材库');
       } catch (error) {
         log('[ContextMenu] 调用上传接口异常:', serializeError(error));
         console.error('[YiShe][UploadImage] 调用上传接口异常:', error);
-
-        // 隐藏 loading 状态
-        if (tab && tab.id != null) {
-          chrome.tabs.sendMessage(
-            tab.id,
-            {
-              type: 'core:loading',
-              action: 'hide'
-            },
-            () => {}
-          );
-        }
-
-        // 异常提示（执行中出现意外错误）
-        if (tab && tab.id != null) {
-          chrome.tabs.sendMessage(
-            tab.id,
-            {
-              type: 'core:toast',
-              level: 'error',
-              message: '上传图片时发生异常，请稍后重试'
-            },
-            () => {}
-          );
-        }
+        showLoading(tabId, 'hide');
+        showToast(tabId, 'error', '上传图片时发生异常，请稍后重试');
       }
 
       return;
