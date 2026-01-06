@@ -136,19 +136,19 @@ window.CoreDOMUtils = {
 
   const TYPE_CONFIG = {
     info: {
-      icon: 'ℹ️',
+      icon: '●',
       className: 'core-toast-info'
     },
     success: {
-      icon: '✅',
+      icon: '✓',
       className: 'core-toast-success'
     },
     warning: {
-      icon: '⚠️',
+      icon: '▲',
       className: 'core-toast-warning'
     },
     error: {
-      icon: '❌',
+      icon: '✕',
       className: 'core-toast-error'
     }
   };
@@ -172,30 +172,56 @@ window.CoreDOMUtils = {
       }
 
       .${TOAST_BASE_CLASS} {
-        min-width: 260px;
-        max-width: 360px;
-        padding: 12px 14px;
-        border-radius: 12px;
+        min-width: 280px;
+        max-width: 400px;
+        padding: 14px 16px;
+        border-radius: 14px;
         display: flex;
         align-items: flex-start;
-        gap: 8px;
-        box-shadow: 0 12px 38px rgba(15, 23, 42, 0.20);
-        background: rgba(15, 23, 42, 0.92);
+        gap: 12px;
+        box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.4),
+                    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%);
         color: #f8fafc;
-        font-size: 13px;
+        font-size: 14px;
         line-height: 1.5;
-        backdrop-filter: blur(16px);
-        border: 1px solid rgba(148, 163, 184, 0.35);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        border: 1px solid rgba(148, 163, 184, 0.25);
         transform: translateX(120%);
         opacity: 0;
         pointer-events: auto;
-        animation: core-toast-slide-in 0.24s ease-out forwards;
+        animation: core-toast-slide-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        transition: transform 0.2s ease, opacity 0.2s ease;
       }
 
       .core-toast-icon {
         font-size: 16px;
         line-height: 1;
-        margin-top: 1px;
+        margin-top: 2px;
+        flex-shrink: 0;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+      }
+
+      .core-toast-success .core-toast-icon {
+        color: #22c55e;
+      }
+
+      .core-toast-error .core-toast-icon {
+        color: #ef4444;
+      }
+
+      .core-toast-warning .core-toast-icon {
+        color: #eab308;
+      }
+
+      .core-toast-info .core-toast-icon {
+        color: #3b82f6;
       }
 
       .core-toast-content {
@@ -206,44 +232,58 @@ window.CoreDOMUtils = {
       }
 
       .core-toast-title {
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 600;
+        color: #f1f5f9;
+        letter-spacing: 0.01em;
       }
 
       .core-toast-message {
-        font-size: 12px;
-        color: #e5e7eb;
+        font-size: 13px;
+        color: #cbd5e1;
         word-break: break-word;
+        line-height: 1.6;
+        letter-spacing: 0.01em;
       }
 
       .core-toast-close {
         border: none;
         background: transparent;
-        color: #9ca3af;
+        color: #94a3b8;
         cursor: pointer;
-        padding: 0;
+        padding: 4px;
         margin-left: 4px;
-        font-size: 14px;
+        font-size: 16px;
         line-height: 1;
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: 999px;
+        border-radius: 6px;
+        width: 24px;
+        height: 24px;
+        flex-shrink: 0;
+        transition: all 0.2s ease;
       }
 
       .core-toast-close:hover {
-        background: rgba(148, 163, 184, 0.2);
-        color: #e5e7eb;
+        background: rgba(148, 163, 184, 0.15);
+        color: #f1f5f9;
+        transform: scale(1.1);
+      }
+
+      .core-toast-close:active {
+        transform: scale(0.95);
       }
 
       .core-toast-progress {
         position: relative;
         width: 100%;
-        height: 2px;
+        height: 3px;
         border-radius: 999px;
         overflow: hidden;
-        margin-top: 8px;
-        background: rgba(148, 163, 184, 0.25);
+        margin-top: 10px;
+        background: rgba(148, 163, 184, 0.2);
+        backdrop-filter: blur(4px);
       }
 
       .core-toast-progress-inner {
@@ -255,43 +295,60 @@ window.CoreDOMUtils = {
         transform-origin: left;
         background: linear-gradient(90deg, #4ade80, #22c55e);
         animation-timing-function: linear;
+        box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
       }
 
       .core-toast-info {
-        border-color: rgba(59, 130, 246, 0.6);
+        border-color: rgba(59, 130, 246, 0.4);
+        box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.4),
+                    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+                    0 0 20px rgba(59, 130, 246, 0.1);
       }
 
       .core-toast-info .core-toast-progress-inner {
         background: linear-gradient(90deg, #60a5fa, #3b82f6);
+        box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
       }
 
       .core-toast-success {
-        border-color: rgba(34, 197, 94, 0.6);
+        border-color: rgba(34, 197, 94, 0.4);
+        box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.4),
+                    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+                    0 0 20px rgba(34, 197, 94, 0.1);
       }
 
       .core-toast-success .core-toast-progress-inner {
         background: linear-gradient(90deg, #4ade80, #22c55e);
+        box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
       }
 
       .core-toast-warning {
-        border-color: rgba(234, 179, 8, 0.7);
+        border-color: rgba(234, 179, 8, 0.5);
+        box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.4),
+                    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+                    0 0 20px rgba(234, 179, 8, 0.1);
       }
 
       .core-toast-warning .core-toast-progress-inner {
         background: linear-gradient(90deg, #facc15, #eab308);
+        box-shadow: 0 0 8px rgba(234, 179, 8, 0.5);
       }
 
       .core-toast-error {
-        border-color: rgba(239, 68, 68, 0.8);
+        border-color: rgba(239, 68, 68, 0.5);
+        box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.4),
+                    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+                    0 0 20px rgba(239, 68, 68, 0.1);
       }
 
       .core-toast-error .core-toast-progress-inner {
         background: linear-gradient(90deg, #f97373, #ef4444);
+        box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
       }
 
       @keyframes core-toast-slide-in {
         from {
-          transform: translateX(120%) translateY(-8px);
+          transform: translateX(120%) translateY(-10px);
           opacity: 0;
         }
         to {
@@ -306,7 +363,7 @@ window.CoreDOMUtils = {
           opacity: 1;
         }
         to {
-          transform: translateX(120%) translateY(-8px);
+          transform: translateX(120%) translateY(-5px);
           opacity: 0;
         }
       }
@@ -382,12 +439,12 @@ window.CoreDOMUtils = {
   function dismissToast(toast) {
     if (!toast || toast._closing) return;
     toast._closing = true;
-    toast.style.animation = 'core-toast-slide-out 0.18s ease-in forwards';
+    toast.style.animation = 'core-toast-slide-out 0.25s cubic-bezier(0.4, 0, 1, 1) forwards';
     setTimeout(() => {
       if (toast.parentNode) {
         toast.parentNode.removeChild(toast);
       }
-    }, 180);
+    }, 250);
   }
 
   // 进度条动画关键帧（依赖 duration 通过 animation-duration 控制）
@@ -502,10 +559,12 @@ window.CoreDOMUtils = {
         display: none;
         align-items: center;
         justify-content: center;
-        background: rgba(0, 0, 0, 0.4);
-        backdrop-filter: blur(4px);
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(8px) saturate(180%);
+        -webkit-backdrop-filter: blur(8px) saturate(180%);
         pointer-events: auto;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        animation: core-loading-backdrop-fade-in 0.25s ease-out;
       }
 
       #${LOADING_CONTAINER_ID}.core-loading-active {
@@ -513,46 +572,80 @@ window.CoreDOMUtils = {
       }
 
       .${LOADING_BASE_CLASS} {
-        background: rgba(15, 23, 42, 0.95);
-        border-radius: 16px;
-        padding: 24px 32px;
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%);
+        border-radius: 20px;
+        padding: 32px 40px;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 16px;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(148, 163, 184, 0.3);
-        min-width: 200px;
-        max-width: 320px;
-        animation: core-loading-fade-in 0.2s ease-out;
+        gap: 20px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5),
+                    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        min-width: 220px;
+        max-width: 360px;
+        animation: core-loading-fade-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
       }
 
       .core-loading-spinner {
-        width: 40px;
-        height: 40px;
-        border: 3px solid rgba(148, 163, 184, 0.3);
-        border-top-color: #3b82f6;
+        width: 48px;
+        height: 48px;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .core-loading-spinner::before {
+        content: '';
+        position: absolute;
+        width: 48px;
+        height: 48px;
+        border: 4px solid rgba(59, 130, 246, 0.15);
         border-radius: 50%;
-        animation: core-loading-spin 0.8s linear infinite;
+      }
+
+      .core-loading-spinner::after {
+        content: '';
+        position: absolute;
+        width: 48px;
+        height: 48px;
+        border: 4px solid transparent;
+        border-top-color: #3b82f6;
+        border-right-color: #3b82f6;
+        border-radius: 50%;
+        animation: core-loading-spin 0.9s cubic-bezier(0.5, 0, 0.5, 1) infinite;
       }
 
       .core-loading-message {
-        color: #f8fafc;
-        font-size: 14px;
+        color: #f1f5f9;
+        font-size: 15px;
         font-weight: 500;
         text-align: center;
-        line-height: 1.5;
+        line-height: 1.6;
         margin: 0;
+        letter-spacing: 0.01em;
+      }
+
+      @keyframes core-loading-backdrop-fade-in {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
       }
 
       @keyframes core-loading-fade-in {
         from {
           opacity: 0;
-          transform: scale(0.95);
+          transform: scale(0.9) translateY(-10px);
         }
         to {
           opacity: 1;
-          transform: scale(1);
+          transform: scale(1) translateY(0);
         }
       }
 
@@ -565,11 +658,11 @@ window.CoreDOMUtils = {
       @keyframes core-loading-fade-out {
         from {
           opacity: 1;
-          transform: scale(1);
+          transform: scale(1) translateY(0);
         }
         to {
           opacity: 0;
-          transform: scale(0.95);
+          transform: scale(0.95) translateY(-5px);
         }
       }
     `;
@@ -600,6 +693,7 @@ window.CoreDOMUtils = {
 
     const spinner = document.createElement('div');
     spinner.className = 'core-loading-spinner';
+    // spinner 使用 ::before 和 ::after 伪元素，不需要添加子元素
 
     const messageEl = document.createElement('div');
     messageEl.className = 'core-loading-message';
@@ -627,12 +721,12 @@ window.CoreDOMUtils = {
     // 添加淡出动画
     const loading = container.querySelector(`.${LOADING_BASE_CLASS}`);
     if (loading) {
-      loading.style.animation = 'core-loading-fade-out 0.2s ease-in forwards';
+      loading.style.animation = 'core-loading-fade-out 0.25s cubic-bezier(0.4, 0, 1, 1) forwards';
       setTimeout(() => {
         if (loading.parentNode) {
           loading.parentNode.removeChild(loading);
         }
-      }, 200);
+      }, 250);
     }
   }
 

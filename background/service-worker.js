@@ -28,6 +28,15 @@ let scriptsLoaded = {
 // 加载依赖库（不抛出错误，避免 Service Worker 崩溃）
 (function() {
   try {
+    // 0. 加载配置文件（优先加载，其他模块会依赖它）
+    try {
+      importScripts('../config/api.config.js');
+      simpleLog('API 配置文件已加载');
+    } catch (e) {
+      console.error('[Core][WS] API 配置文件加载失败:', e);
+      scriptsLoaded.error = (scriptsLoaded.error || '') + ' API 配置文件加载失败: ' + e.message;
+    }
+    
     // 1. 加载 socket.io 客户端（用于和服务端、本地客户端建立 WebSocket 连接）
     try {
       importScripts('../libs/socket.io.min.js');
@@ -53,12 +62,12 @@ let scriptsLoaded = {
   }
 })();
 
-// 后端 WebSocket 默认地址（生产 / 开发）
-const DEFAULT_PROD_WS_ENDPOINT = 'https://1s.design:1520/ws';
-const DEFAULT_DEV_WS_ENDPOINT = 'http://localhost:1520/ws';
+// 从配置文件获取默认地址（如果配置文件加载失败，使用 fallback）
+const DEFAULT_PROD_WS_ENDPOINT = (typeof self !== 'undefined' && self.ApiConfig?.PROD_CONFIG?.WS_BASE_URL) || 'https://1s.design:1520/ws';
+const DEFAULT_DEV_WS_ENDPOINT = (typeof self !== 'undefined' && self.ApiConfig?.DEV_CONFIG?.WS_BASE_URL) || 'http://localhost:1520/ws';
 const DEFAULT_WS_ENDPOINT = DEFAULT_PROD_WS_ENDPOINT;
 // 本地 Electron 客户端固定地址（不包含路径，路径由 Socket.IO 配置指定）
-const CLIENT_WS_ENDPOINT = 'http://localhost:1519';
+const CLIENT_WS_ENDPOINT = (typeof self !== 'undefined' && self.ApiConfig?.PROD_CONFIG?.CLIENT_BASE_URL) || 'http://localhost:1519';
 const STORAGE_ENDPOINT_KEY = 'wsEndpoint';
 const STORAGE_ENDPOINT_CUSTOM_KEY = 'wsEndpointCustom';
 const STORAGE_DEV_MODE_KEY = 'devMode';
@@ -67,8 +76,9 @@ const STORAGE_WS_BASE_URL_KEY = 'wsBaseUrl';
 const HEARTBEAT_INTERVAL = 15000;
 const HEARTBEAT_TIMEOUT = 10000;
 
-const SERVER_UPLOAD_URL = 'https://1s.design:1520/api/crawler/material/add';
-const FEISHU_WEBHOOK_URL = 'https://open.feishu.cn/open-apis/bot/v2/hook/4040ef7e-9776-4010-bf53-c30e4451b449';
+// 从配置文件获取 URL（如果配置文件加载失败，使用 fallback）
+const SERVER_UPLOAD_URL = (typeof self !== 'undefined' && self.ApiConfig?.PROD_CONFIG?.CRAWLER_MATERIAL_UPLOAD_URL) || 'https://1s.design:1520/api/crawler/material/add';
+const FEISHU_WEBHOOK_URL = (typeof self !== 'undefined' && self.ApiConfig?.PROD_CONFIG?.FEISHU_WEBHOOK_URL) || 'https://open.feishu.cn/open-apis/bot/v2/hook/4040ef7e-9776-4010-bf53-c30e4451b449';
 const textEncoder = new TextEncoder();
 
 const CLIENT_SOURCE = 'yishe-extension';
@@ -78,7 +88,7 @@ const CLIENT_VERSION_QUERY_KEY = 'extensionVersion';
 const CLIENT_ID_QUERY_KEY = 'clientId';
 const LOCATION_CACHE_KEY = 'wsLocationCache';
 const LOCATION_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
-const LOCATION_ENDPOINT = 'https://ipapi.co/json/';
+const LOCATION_ENDPOINT = (typeof self !== 'undefined' && self.ApiConfig?.PROD_CONFIG?.LOCATION_ENDPOINT) || 'https://ipapi.co/json/';
 const AUTH_TOKEN_KEY = 'accessToken';
 const AUTH_USER_INFO_KEY = 'userInfo';
 
@@ -218,6 +228,210 @@ async function sendFeishuNotification(lines) {
   }).catch((error) => {
     log('发送飞书通知失败:', serializeError(error));
   });
+}
+
+/**
+ * 保存网站信息到服务端
+ * @param {Object} websiteData - 网站数据
+ * @param {string} websiteData.url - 网站URL
+ * @param {string} websiteData.name - 网站名称
+ * @param {string} [websiteData.description] - 网站描述
+ * @param {string} [websiteData.icon] - 网站图标
+ * @param {string} [websiteData.category] - 网站分类
+ * @param {Object} tab - 标签页对象
+ */
+async function saveWebsiteToServer(websiteData, tab) {
+  try {
+    // 1. 检查是否已登录
+    const authState = await storageGet([AUTH_TOKEN_KEY, AUTH_USER_INFO_KEY]);
+    const token = authState[AUTH_TOKEN_KEY];
+    const userInfo = authState[AUTH_USER_INFO_KEY];
+
+    if (!token || !userInfo) {
+      // 隐藏 loading 状态
+      if (tab && tab.id != null) {
+        chrome.tabs.sendMessage(
+          tab.id,
+          {
+            type: 'core:loading',
+            action: 'hide'
+          },
+          () => {}
+        );
+      }
+      // 显示错误提示
+      if (tab && tab.id != null) {
+        chrome.tabs.sendMessage(
+          tab.id,
+          {
+            type: 'core:toast',
+            level: 'error',
+            message: '请先登录后再保存网站'
+          },
+          () => {}
+        );
+      }
+      throw new Error('请先登录后再保存网站');
+    }
+
+    // 2. 获取 API 基础地址和接口路径
+    const devMode = Boolean((await storageGet([STORAGE_DEV_MODE_KEY]))[STORAGE_DEV_MODE_KEY]);
+    const apiBaseUrl = devMode
+      ? ((typeof self !== 'undefined' && self.ApiConfig?.DEV_CONFIG?.API_BASE_URL) || 'http://localhost:1520/api')
+      : ((typeof self !== 'undefined' && self.ApiConfig?.PROD_CONFIG?.API_BASE_URL) || 'https://1s.design:1520/api');
+    
+    const createPath = (typeof self !== 'undefined' && self.ApiConfig?.API_ENDPOINTS?.COMMON_URL?.CREATE) || '/common-url';
+    const fullUrl = `${apiBaseUrl}${createPath}`;
+
+    // 3. 构建请求数据
+    // 确保 userId 是字符串类型，如果不存在则不传（因为它是可选的）
+    const userId = userInfo.id || userInfo.userId;
+    const requestData = {
+      url: websiteData.url,
+      name: websiteData.name || new URL(websiteData.url).hostname,
+      description: websiteData.description || '',
+      icon: websiteData.icon || '',
+      category: websiteData.category || '收藏',
+      isActive: true,
+      sort: 0,
+    };
+
+    // 只有当 userId 存在且是字符串时才添加
+    if (userId && typeof userId === 'string') {
+      requestData.userId = userId;
+    } else if (userId) {
+      // 如果 userId 存在但不是字符串，转换为字符串
+      requestData.userId = String(userId);
+    }
+
+    log('[SaveWebsite] 准备保存网站:', requestData);
+
+    // 4. 发送请求
+    const response = await fetch(fullUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(requestData),
+    });
+
+    // 5. 处理响应
+    const responseText = await response.text().catch(() => '');
+    let responseData;
+    try {
+      responseData = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      responseData = { message: responseText || `HTTP ${response.status}` };
+    }
+
+    // 6. 检查响应状态
+    if (!response.ok) {
+      // 解析错误消息
+      let errorMessage = '保存网站失败';
+      if (responseData.message) {
+        if (Array.isArray(responseData.message)) {
+          errorMessage = responseData.message.join(', ');
+        } else if (typeof responseData.message === 'string') {
+          errorMessage = responseData.message;
+        }
+      } else if (responseData.msg) {
+        if (Array.isArray(responseData.msg)) {
+          errorMessage = responseData.msg.join(', ');
+        } else if (typeof responseData.msg === 'string') {
+          errorMessage = responseData.msg;
+        }
+      } else {
+        errorMessage = `保存失败: HTTP ${response.status}`;
+      }
+
+      // 隐藏 loading 状态
+      if (tab && tab.id != null) {
+        chrome.tabs.sendMessage(
+          tab.id,
+          {
+            type: 'core:loading',
+            action: 'hide'
+          },
+          () => {}
+        );
+      }
+
+      // 显示错误提示
+      if (tab && tab.id != null) {
+        chrome.tabs.sendMessage(
+          tab.id,
+          {
+            type: 'core:toast',
+            level: 'error',
+            message: errorMessage
+          },
+          () => {}
+        );
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    // 7. 成功处理
+    log('[SaveWebsite] 网站保存成功:', responseData);
+
+    // 隐藏 loading 状态
+    if (tab && tab.id != null) {
+      chrome.tabs.sendMessage(
+        tab.id,
+        {
+          type: 'core:loading',
+          action: 'hide'
+        },
+        () => {}
+      );
+    }
+
+    // 成功提示
+    if (tab && tab.id != null) {
+      chrome.tabs.sendMessage(
+        tab.id,
+        {
+          type: 'core:toast',
+          level: 'success',
+          message: '网站已保存到 YiShe'
+        },
+        () => {}
+      );
+    }
+
+    return responseData;
+  } catch (error) {
+    log('[SaveWebsite] 保存网站异常:', serializeError(error));
+    
+    // 确保在异常情况下也隐藏 loading 状态
+    if (tab && tab.id != null) {
+      chrome.tabs.sendMessage(
+        tab.id,
+        {
+          type: 'core:loading',
+          action: 'hide'
+        },
+        () => {}
+      );
+    }
+
+    // 如果还没有显示错误提示，则显示
+    if (tab && tab.id != null) {
+      chrome.tabs.sendMessage(
+        tab.id,
+        {
+          type: 'core:toast',
+          level: 'error',
+          message: error.message || '保存网站失败，请稍后重试'
+        },
+        () => {}
+      );
+    }
+
+    throw error;
+  }
 }
 
 
@@ -1580,11 +1794,10 @@ function initContextMenus() {
       log('[ContextMenu] 清除菜单项:', chrome.runtime.lastError.message);
     }
 
-    // 1）打印当前页面信息（任何位置都能用）
+    // 1）保存当前网站（任何位置都能用）
     chrome.contextMenus.create({
-      id: 'print-page-info',
-      title: '打印当前页面信息',
-      // 使用 all，保证无论在页面、链接、图片、选中文本等位置右键都能看到
+      id: 'save-current-website',
+      title: '保存当前网站到 YiShe',
       contexts: ['all']
     });
 
@@ -1595,7 +1808,7 @@ function initContextMenus() {
       contexts: ['image']
     });
 
-    log('[ContextMenu] 右键菜单已初始化（仅打印当前页面信息）');
+    log('[ContextMenu] 右键菜单已初始化');
   });
 }
 
@@ -1649,38 +1862,63 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
     log('[ContextMenu] 右键菜单项被点击:', info.menuItemId);
 
-    // 1）打印当前页面信息（调试用）
-    if (info.menuItemId === 'print-page-info') {
-      // 收集当前页面及点击上下文的关键信息
-      const pageInfo = {
-        // 标签页相关
-        tabId: tab?.id ?? null,
-        tabUrl: tab?.url ?? null,
-        tabTitle: tab?.title ?? null,
-        tabFavIconUrl: tab?.favIconUrl ?? null,
+    // 1）保存当前网站到 YiShe
+    if (info.menuItemId === 'save-current-website') {
+      const pageUrl = info.pageUrl || tab?.url || null;
+      const pageTitle = tab?.title || null;
+      const favIconUrl = tab?.favIconUrl || null;
 
-        // 页面 / frame 相关
-        pageUrl: info.pageUrl || null,
-        frameUrl: info.frameUrl || null,
-        frameId: info.frameId ?? null,
+      if (!pageUrl) {
+        log('[ContextMenu] 保存网站失败：未获取到页面地址');
+        console.warn('[YiShe][SaveWebsite] 缺少页面地址，info =', info);
 
-        // 文本 / 链接 / 图片 等上下文信息
-        selectionText: info.selectionText || null,
-        linkUrl: info.linkUrl || null,
-        linkText: info.linkText || null,
-        srcUrl: info.srcUrl || null,
-        mediaType: info.mediaType || null,
-        editable: info.editable ?? null,
+        if (tab && tab.id != null) {
+          chrome.tabs.sendMessage(
+            tab.id,
+            {
+              type: 'core:toast',
+              level: 'warning',
+              message: '无法识别当前页面地址，暂时无法保存'
+            },
+            () => {}
+          );
+        }
+        return;
+      }
 
-        // 触发菜单的更多元信息
-        menuItemId: info.menuItemId,
-        parentMenuItemId: info.parentMenuItemId || null,
-        contexts: info.contexts || undefined
-      };
+      log('[ContextMenu] 准备保存网站到 YiShe:', {
+        pageUrl,
+        pageTitle,
+        favIconUrl
+      });
 
-      // 打印到扩展的日志和普通控制台，方便调试查看
-      log('[ContextMenu] 打印当前页面信息:', pageInfo);
-      console.log('[YiShe][PageInfo]', pageInfo);
+      // 显示 loading 状态
+      if (tab && tab.id != null) {
+        chrome.tabs.sendMessage(
+          tab.id,
+          {
+            type: 'core:loading',
+            action: 'show',
+            message: '正在保存网站到 YiShe...'
+          },
+          () => {}
+        );
+      }
+
+      // 异步保存网站信息
+      // 注意：错误处理和 loading 状态管理已在 saveWebsiteToServer 函数内部处理
+      saveWebsiteToServer({
+        url: pageUrl,
+        name: pageTitle || new URL(pageUrl).hostname,
+        description: pageTitle || '',
+        icon: favIconUrl || '',
+        category: '收藏',
+      }, tab).catch((error) => {
+        // 错误已在 saveWebsiteToServer 函数内部处理，这里只记录日志
+        log('[ContextMenu] 保存网站失败:', serializeError(error));
+        console.error('[YiShe][SaveWebsite] 保存网站失败:', error);
+      });
+
       return;
     }
 
@@ -1738,7 +1976,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           keywords: ''       // 暂时留空
         };
 
-        const response = await fetch('http://localhost:1519/api/crawler-material-upload', {
+        // 从配置文件获取客户端上传接口地址
+        const clientUploadUrl = (typeof self !== 'undefined' && self.ApiConfig?.PROD_CONFIG?.CLIENT_BASE_URL && self.ApiConfig?.CLIENT_ENDPOINTS?.CRAWLER_MATERIAL_UPLOAD)
+          ? `${self.ApiConfig.PROD_CONFIG.CLIENT_BASE_URL}${self.ApiConfig.CLIENT_ENDPOINTS.CRAWLER_MATERIAL_UPLOAD}`
+          : 'http://localhost:1519/api/crawler-material-upload';
+        
+        const response = await fetch(clientUploadUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'

@@ -1,6 +1,20 @@
 // API 工具函数
 // 用于处理 API 请求、token 管理和 base URL 配置
 
+// 从配置文件获取配置（如果配置文件已加载）
+let ApiConfig = null;
+if (typeof window !== 'undefined' && window.ApiConfig) {
+  ApiConfig = window.ApiConfig;
+} else if (typeof self !== 'undefined' && self.ApiConfig) {
+  ApiConfig = self.ApiConfig;
+} else if (typeof module !== 'undefined' && module.exports && require) {
+  try {
+    ApiConfig = require('../config/api.config.js');
+  } catch (e) {
+    console.warn('无法加载 API 配置文件，使用默认配置');
+  }
+}
+
 const STORAGE_KEYS = {
   TOKEN: 'accessToken',
   USER_INFO: 'userInfo',
@@ -11,8 +25,13 @@ const STORAGE_KEYS = {
   DEV_WS_BASE_URL: 'devWsBaseUrl',
 };
 
-// 默认配置
-const DEFAULT_CONFIG = {
+// 默认配置（从配置文件获取，如果配置文件未加载则使用 fallback）
+const DEFAULT_CONFIG = ApiConfig ? {
+  PROD_API_BASE_URL: ApiConfig.PROD_CONFIG.API_BASE_URL,
+  PROD_WS_BASE_URL: ApiConfig.PROD_CONFIG.WS_BASE_URL,
+  DEV_API_BASE_URL: ApiConfig.DEV_CONFIG.API_BASE_URL,
+  DEV_WS_BASE_URL: ApiConfig.DEV_CONFIG.WS_BASE_URL,
+} : {
   PROD_API_BASE_URL: 'https://1s.design:1520/api',
   PROD_WS_BASE_URL: 'https://1s.design:1520/ws',
   DEV_API_BASE_URL: 'http://localhost:1520/api',
@@ -211,8 +230,10 @@ async function apiRequest(url, options = {}) {
 // 登录
 async function login(username, password, rememberMe = false) {
   const apiBaseUrl = await getApiBaseUrl();
+  // 从配置文件获取登录接口路径
+  const loginPath = ApiConfig?.API_ENDPOINTS?.AUTH?.LOGIN || '/auth/login';
   // 确保 URL 正确拼接（apiBaseUrl 已经包含 /api 前缀）
-  const url = `${apiBaseUrl}/auth/login`;
+  const url = `${apiBaseUrl}${loginPath}`;
   
   const response = await fetch(url, {
     method: 'POST',
@@ -255,7 +276,9 @@ async function login(username, password, rememberMe = false) {
 // 获取用户信息
 async function fetchUserInfo() {
   try {
-    const data = await apiRequest('/user/getUserInfo', {
+    // 从配置文件获取用户信息接口路径
+    const userInfoPath = ApiConfig?.API_ENDPOINTS?.USER?.GET_USER_INFO || '/user/getUserInfo';
+    const data = await apiRequest(userInfoPath, {
       method: 'POST',
       body: JSON.stringify({}),
     });
@@ -280,7 +303,9 @@ async function fetchUserInfo() {
 // 登出
 async function logout() {
   try {
-    await apiRequest('/auth/logout', {
+    // 从配置文件获取登出接口路径
+    const logoutPath = ApiConfig?.API_ENDPOINTS?.AUTH?.LOGOUT || '/auth/logout';
+    await apiRequest(logoutPath, {
       method: 'POST',
     });
   } catch (error) {
@@ -289,6 +314,15 @@ async function logout() {
     await clearToken();
     await clearUserInfo();
   }
+}
+
+// 创建公共链接
+async function createCommonUrl(commonUrlData) {
+  const createPath = ApiConfig?.API_ENDPOINTS?.COMMON_URL?.CREATE || '/common-url';
+  return await apiRequest(createPath, {
+    method: 'POST',
+    body: JSON.stringify(commonUrlData),
+  });
 }
 
 // 导出
@@ -310,6 +344,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getWsBaseUrl,
     setApiBaseUrl,
     setWsBaseUrl,
+    createCommonUrl,
     DEFAULT_CONFIG,
     STORAGE_KEYS,
   };
@@ -334,6 +369,7 @@ if (typeof window !== 'undefined') {
     getWsBaseUrl,
     setApiBaseUrl,
     setWsBaseUrl,
+    createCommonUrl,
     DEFAULT_CONFIG,
     STORAGE_KEYS,
   };
