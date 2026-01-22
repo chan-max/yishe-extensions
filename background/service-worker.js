@@ -1914,10 +1914,10 @@ function initContextMenus() {
       contexts: ['selection']
     });
 
-    // 3）上传图片到爬图库（只在图片上右键时显示）
+    // 3）上传图片到 YiShe 素材库（带AI分析）
     chrome.contextMenus.create({
       id: 'upload-image-to-crawler',
-      title: '上传图片到 YiShe 素材库',
+      title: '上传图片到 YiShe 素材库（AI分析）',
       contexts: ['image']
     });
 
@@ -1947,7 +1947,7 @@ async function copyToClipboard(text) {
         textarea.style.opacity = '0';
         document.body.appendChild(textarea);
         textarea.select();
-        
+
         try {
           const successful = document.execCommand('copy');
           if (!successful) {
@@ -1964,6 +1964,118 @@ async function copyToClipboard(text) {
     return true;
   } catch (error) {
     log('[ContextMenu] 复制失败:', serializeError(error));
+    throw error;
+  }
+}
+
+/**
+ * 显示上传弹窗（包含文字框选功能）
+ * @param {number|null} tabId - 标签页 ID
+ * @param {Object} imageInfo - 图片信息
+ * @returns {Promise<Object>} - 上传结果
+ */
+function showUploadDialog(tabId, imageInfo) {
+  return new Promise((resolve, reject) => {
+    // 发送消息到content script显示上传弹窗
+    chrome.tabs.sendMessage(
+      tabId,
+      {
+        type: 'yishe:show-upload-dialog',
+        data: imageInfo
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          log('[UploadDialog] 显示弹窗失败:', chrome.runtime.lastError.message);
+          reject(new Error('显示上传弹窗失败'));
+          return;
+        }
+
+        if (response && response.action === 'upload') {
+          log('[UploadDialog] 用户确认上传，包含文字:', !!response.selectedText);
+          
+          // 立即显示 loading
+          markImageUploading(imageInfo.imageUrl);
+          showLoading(tabId, 'show', '正在上传图片到 YiShe 素材库...');
+          
+          // 只返回用户选择，不执行上传
+          resolve({ success: true, selectedText: response.selectedText || '' });
+        } else {
+          log('[UploadDialog] 用户取消上传');
+          reject(new Error('用户取消'));
+        }
+      }
+    );
+  });
+}
+
+/**
+ * 执行图片上传
+ * @param {number|null} tabId - 标签页 ID
+ * @param {string} imageUrl - 图片URL
+ * @param {string} selectedText - 选中的文字
+ * @returns {Promise<Object>} - 上传结果
+ */
+async function performUpload(tabId, imageUrl, selectedText) {
+  log('[Upload] 开始上传图片:', { tabId, imageUrl, selectedText: selectedText?.substring(0, 50) + '...' });
+  try {
+    // 调用本地 yishe-client 提供的接口
+    const payload = {
+      url: imageUrl,
+      name: '',          // 可以以后改成从图片 alt / 描述推断
+      description: '',   // 暂时留空，由服务端或后续编辑补充
+      keywords: '',      // 暂时留空
+      aiGenerate:true,
+      aiGenerateRawInfo: selectedText || undefined  // 添加AI分析的原始信息
+    };
+
+    // 从配置文件获取客户端上传接口地址
+    const clientUploadUrl = (typeof self !== 'undefined' && self.ApiConfig?.PROD_CONFIG?.CLIENT_BASE_URL && self.ApiConfig?.CLIENT_ENDPOINTS?.CRAWLER_MATERIAL_UPLOAD)
+      ? `${self.ApiConfig.PROD_CONFIG.CLIENT_BASE_URL}${self.ApiConfig.CLIENT_ENDPOINTS.CRAWLER_MATERIAL_UPLOAD}`
+      : 'http://localhost:1519/api/crawler-material-upload';
+
+    const response = await fetch(clientUploadUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      log('[Upload] 上传图片到素材库失败，HTTP 状态异常:', response.status, text);
+      console.error('[YiShe][UploadImage] 上传失败:', response.status, text);
+
+      // 检查是否是服务未运行
+      if (response.status === 0 || text.includes('ECONNREFUSED') || text.includes('Failed to fetch')) {
+        throw new Error('无法连接到 YiShe 客户端服务，请确保 YiShe 客户端已启动');
+      } else {
+        throw new Error('上传图片失败（服务端返回错误）');
+      }
+    }
+
+    let result = null;
+    try {
+      result = await response.json();
+    } catch (e) {
+      log('[Upload] 解析上传接口响应失败:', serializeError(e));
+      throw new Error('解析服务端响应失败');
+    }
+
+    log('[Upload] 图片上传接口响应:', result);
+    console.log('[YiShe][UploadImage] 图片上传完成:', {
+      imageUrl,
+      selectedText: selectedText ? selectedText.substring(0, 50) + '...' : '',
+      result
+    });
+
+    markImageUploadComplete(imageUrl);
+
+    return { success: true, result };
+  } catch (error) {
+    log('[Upload] 上传异常:', serializeError(error));
+    console.error('[YiShe][UploadImage] 上传异常:', error);
+    markImageUploadComplete(imageUrl);
     throw error;
   }
 }
@@ -2055,14 +2167,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       return;
     }
 
-    // 3）上传图片到 YiShe 爬图库
+    // 3）上传图片到 YiShe 素材库（带AI分析）
     if (info.menuItemId === 'upload-image-to-crawler') {
       const imageUrl = info.srcUrl || null;
       const pageUrl = info.pageUrl || tab?.url || null;
       const pageTitle = tab?.title || null;
 
       const tabId = getTabId(tab);
-      
+
       if (!imageUrl) {
         log('[ContextMenu] 上传图片失败：未获取到图片地址 srcUrl');
         console.warn('[YiShe][UploadImage] 缺少图片地址 srcUrl，info =', info);
@@ -2077,75 +2189,47 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         return;
       }
 
-      log('[ContextMenu] 准备上传图片到爬图库:', {
+      log('[ContextMenu] 准备上传图片到素材库:', {
         imageUrl,
         pageUrl,
         pageTitle
       });
 
-      // 标记开始上传
-      markImageUploading(imageUrl);
-
-      // 显示 loading 状态
-      showLoading(tabId, 'show', '正在上传图片到 YiShe 素材库...');
-
+      // 显示统一的上传弹窗
       try {
-        // 调用本地 yishe-client 提供的接口
-        const payload = {
-          url: imageUrl,
-          // 这些字段目前在后端是可选的，你后续可以在这里填更多信息
-          name: '',          // 可以以后改成从图片 alt / 描述推断
-          description: '',   // 暂时留空，由服务端或后续编辑补充
-          keywords: ''       // 暂时留空
-        };
-
-        // 从配置文件获取客户端上传接口地址
-        const clientUploadUrl = (typeof self !== 'undefined' && self.ApiConfig?.PROD_CONFIG?.CLIENT_BASE_URL && self.ApiConfig?.CLIENT_ENDPOINTS?.CRAWLER_MATERIAL_UPLOAD)
-          ? `${self.ApiConfig.PROD_CONFIG.CLIENT_BASE_URL}${self.ApiConfig.CLIENT_ENDPOINTS.CRAWLER_MATERIAL_UPLOAD}`
-          : 'http://localhost:1519/api/crawler-material-upload';
-        
-        const response = await fetch(clientUploadUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-          const text = await response.text().catch(() => '');
-          log('[ContextMenu] 上传图片到爬图库失败，HTTP 状态异常:', response.status, text);
-          console.error('[YiShe][UploadImage] 上传失败:', response.status, text);
-          showLoading(tabId, 'hide');
-          showToast(tabId, 'error', '上传图片失败（本地服务返回错误）');
-          markImageUploadComplete(imageUrl);
-          return;
-        }
-
-        let result = null;
-        try {
-          result = await response.json();
-        } catch (e) {
-          log('[ContextMenu] 解析上传接口响应失败:', serializeError(e));
-        }
-
-        log('[ContextMenu] 图片上传接口响应:', result);
-        console.log('[YiShe][UploadImage] 图片上传完成:', {
+        const uploadResult = await showUploadDialog(tabId, {
           imageUrl,
           pageUrl,
-          pageTitle,
-          result
+          pageTitle
         });
 
-        showLoading(tabId, 'hide');
-        showToast(tabId, 'success', '图片已上传到 YiShe 素材库');
-        markImageUploadComplete(imageUrl);
+        if (uploadResult.success) {
+          // 用户确认上传，开始执行上传流程
+          // loading 已经在 showUploadDialog 中显示了
+          log('[ContextMenu] 用户确认上传，开始执行，selectedText:', uploadResult.selectedText);
+
+          try {
+            // 执行上传
+            const result = await performUpload(tabId, imageUrl, uploadResult.selectedText || '');
+            log('[ContextMenu] 上传成功:', result);
+
+            // 上传成功
+            showLoading(tabId, 'hide');
+            showToast(tabId, 'success', '图片已上传到 YiShe 素材库');
+          } catch (uploadError) {
+            // 上传过程中的错误
+            log('[ContextMenu] 上传过程异常:', serializeError(uploadError));
+            showLoading(tabId, 'hide');
+            showToast(tabId, 'error', uploadError.message || '上传图片时发生异常，请稍后重试');
+          }
+        }
       } catch (error) {
-        log('[ContextMenu] 调用上传接口异常:', serializeError(error));
-        console.error('[YiShe][UploadImage] 调用上传接口异常:', error);
+        log('[ContextMenu] 上传流程异常:', serializeError(error));
+        // 确保隐藏 loading
         showLoading(tabId, 'hide');
-        showToast(tabId, 'error', '上传图片时发生异常，请稍后重试');
-        markImageUploadComplete(imageUrl);
+        if (!error.message?.includes('用户取消')) {
+          showToast(tabId, 'error', '上传图片时发生异常，请稍后重试');
+        }
       }
 
       return;
