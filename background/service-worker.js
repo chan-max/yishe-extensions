@@ -2024,8 +2024,8 @@ async function performUpload(tabId, imageUrl, selectedText) {
       name: '',          // 可以以后改成从图片 alt / 描述推断
       description: '',   // 暂时留空，由服务端或后续编辑补充
       keywords: '',      // 暂时留空
-      aiGenerate:true,
-      aiGenerateRawInfo: selectedText || undefined  // 添加AI分析的原始信息
+      useAiGenerate: true,  // 启用AI自动生成图片信息
+      ...(selectedText ? { aiGenerateRawInfo: selectedText } : {})  // 添加AI分析的原始信息（如果有）
     };
 
     // 从配置文件获取客户端上传接口地址
