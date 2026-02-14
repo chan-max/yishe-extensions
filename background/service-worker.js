@@ -26,7 +26,7 @@ let scriptsLoaded = {
 };
 
 // 加载依赖库（不抛出错误，避免 Service Worker 崩溃）
-(function() {
+(function () {
   try {
     // 0. 加载配置文件（优先加载，其他模块会依赖它）
     try {
@@ -36,7 +36,7 @@ let scriptsLoaded = {
       console.error('[Core][WS] API 配置文件加载失败:', e);
       scriptsLoaded.error = (scriptsLoaded.error || '') + ' API 配置文件加载失败: ' + e.message;
     }
-    
+
     // 1. 加载 socket.io 客户端（用于和服务端、本地客户端建立 WebSocket 连接）
     try {
       importScripts('../libs/socket.io.min.js');
@@ -46,7 +46,7 @@ let scriptsLoaded = {
       console.error('[Core][WS] Socket.IO 加载失败:', e);
       scriptsLoaded.error = (scriptsLoaded.error || '') + ' Socket.IO 加载失败: ' + e.message;
     }
-    
+
     // 2. 加载消息处理器（目前仅保留基础工具和路由器）
     try {
       importScripts('handlers/base.js');
@@ -274,7 +274,7 @@ function markImageUploadComplete(imageUrl) {
  */
 function showLoading(tabId, action = 'show', message = '处理中...') {
   if (tabId == null) return;
-  
+
   chrome.tabs.sendMessage(
     tabId,
     {
@@ -300,7 +300,7 @@ function showLoading(tabId, action = 'show', message = '处理中...') {
  */
 function showToast(tabId, level, message, duration) {
   if (tabId == null || !message) return;
-  
+
   chrome.tabs.sendMessage(
     tabId,
     {
@@ -363,7 +363,7 @@ function parseErrorMessage(responseData, statusCode, defaultMessage = '操作失
  */
 async function saveWebsiteToServer(websiteData, tab) {
   const tabId = getTabId(tab);
-  
+
   try {
     // 1. 检查是否已登录
     const authState = await storageGet([AUTH_TOKEN_KEY, AUTH_USER_INFO_KEY]);
@@ -381,7 +381,7 @@ async function saveWebsiteToServer(websiteData, tab) {
     const apiBaseUrl = devMode
       ? ((typeof self !== 'undefined' && self.ApiConfig?.DEV_CONFIG?.API_BASE_URL) || 'http://localhost:1520/api')
       : ((typeof self !== 'undefined' && self.ApiConfig?.PROD_CONFIG?.API_BASE_URL) || 'https://1s.design:1520/api');
-    
+
     const createPath = (typeof self !== 'undefined' && self.ApiConfig?.API_ENDPOINTS?.COMMON_URL?.CREATE) || '/common-url';
     const fullUrl = `${apiBaseUrl}${createPath}`;
 
@@ -459,7 +459,7 @@ async function saveWebsiteToServer(websiteData, tab) {
  */
 async function saveTextToServer(textData, tab) {
   const tabId = getTabId(tab);
-  
+
   try {
     // 1. 检查是否已登录
     const authState = await storageGet([AUTH_TOKEN_KEY, AUTH_USER_INFO_KEY]);
@@ -477,7 +477,7 @@ async function saveTextToServer(textData, tab) {
     const apiBaseUrl = devMode
       ? ((typeof self !== 'undefined' && self.ApiConfig?.DEV_CONFIG?.API_BASE_URL) || 'http://localhost:1520/api')
       : ((typeof self !== 'undefined' && self.ApiConfig?.PROD_CONFIG?.API_BASE_URL) || 'https://1s.design:1520/api');
-    
+
     const createPath = (typeof self !== 'undefined' && self.ApiConfig?.API_ENDPOINTS?.SENTENCE?.CREATE) || '/sentences';
     const fullUrl = `${apiBaseUrl}${createPath}`;
 
@@ -1155,8 +1155,8 @@ async function initWebsocket() {
     query,
     auth: token
       ? {
-          token,
-        }
+        token,
+      }
       : undefined,
   });
 
@@ -1480,7 +1480,7 @@ async function forceReconnect(context = 'manual') {
 function handleAdminMessage(data) {
   log('[handleAdminMessage] 开始处理管理员消息');
   log('[handleAdminMessage] 输入数据:', data);
-  
+
   try {
     // 尝试通过消息路由器处理命令消息
     if (typeof self !== 'undefined' && self.MessageHandlers?.Router) {
@@ -1495,7 +1495,7 @@ function handleAdminMessage(data) {
         .catch((error) => {
           log('[handleAdminMessage] 处理命令消息失败:', serializeError(error));
         });
-      
+
       // 如果是命令消息，提前返回（不等待异步结果，避免阻塞）
       if (data && typeof data === 'object' && data.command) {
         return;
@@ -1506,7 +1506,7 @@ function handleAdminMessage(data) {
       timestamp: new Date().toISOString(),
       data: data,
     };
-    
+
     log('[handleAdminMessage] 构建的消息数据:', messageData);
     log('[handleAdminMessage] 时间戳:', messageData.timestamp);
 
@@ -1516,16 +1516,16 @@ function handleAdminMessage(data) {
       log('[handleAdminMessage] 读取到的现有消息:', result);
       const messages = result.adminMessages || [];
       log('[handleAdminMessage] 现有消息数量:', messages.length);
-      
+
       messages.unshift(messageData);
       log('[handleAdminMessage] 添加新消息后数量:', messages.length);
-      
+
       // 只保留最近 50 条消息
       if (messages.length > 50) {
         messages.length = 50;
         log('[handleAdminMessage] 截断后消息数量:', messages.length);
       }
-      
+
       log('[handleAdminMessage] 准备存储消息，数量:', messages.length);
       chrome.storage.local.set({ adminMessages: messages }, () => {
         if (chrome.runtime.lastError) {
@@ -1565,12 +1565,12 @@ function handleAdminMessage(data) {
     if (chrome.notifications) {
       log('[handleAdminMessage] 准备创建浏览器通知...');
       const notificationId = `admin-message-${Date.now()}`;
-      const messageText = typeof data === 'string' 
-        ? data 
+      const messageText = typeof data === 'string'
+        ? data
         : (data?.message || data?.text || JSON.stringify(data));
-      
+
       log('[handleAdminMessage] 通知内容:', messageText);
-      
+
       chrome.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: chrome.runtime.getURL('icons/icon48.png') || '',
@@ -1586,7 +1586,7 @@ function handleAdminMessage(data) {
     } else {
       log('[handleAdminMessage] chrome.notifications 不可用');
     }
-    
+
     log('[handleAdminMessage] 处理完成');
   } catch (error) {
     log('[handleAdminMessage] 处理管理员消息失败:', serializeError(error));
@@ -1729,22 +1729,22 @@ self.addEventListener('unhandledrejection', (event) => {
 chrome.runtime.onInstalled.addListener(() => {
   log('插件已安装');
   try {
-  chrome.storage.local.get([STORAGE_ENDPOINT_KEY, STORAGE_ENDPOINT_CUSTOM_KEY], (result) => {
+    chrome.storage.local.get([STORAGE_ENDPOINT_KEY, STORAGE_ENDPOINT_CUSTOM_KEY], (result) => {
       if (chrome.runtime.lastError) {
         log('获取存储失败:', chrome.runtime.lastError.message);
         return;
       }
-    if (!result[STORAGE_ENDPOINT_KEY]) {
-      chrome.storage.local.set({
-        [STORAGE_ENDPOINT_KEY]: DEFAULT_WS_ENDPOINT,
-        [STORAGE_ENDPOINT_CUSTOM_KEY]: false,
+      if (!result[STORAGE_ENDPOINT_KEY]) {
+        chrome.storage.local.set({
+          [STORAGE_ENDPOINT_KEY]: DEFAULT_WS_ENDPOINT,
+          [STORAGE_ENDPOINT_CUSTOM_KEY]: false,
         }, () => {
           if (chrome.runtime.lastError) {
             log('设置默认端点失败:', chrome.runtime.lastError.message);
           }
-      });
-    }
-  });
+        });
+      }
+    });
   } catch (error) {
     log('onInstalled 处理失败:', serializeError(error));
   }
@@ -1791,12 +1791,12 @@ chrome.runtime.onStartup.addListener(() => {
 // =============================================================
 try {
   log('Service Worker 开始初始化...');
-initialize().catch((error) => {
-  log('初始化调用失败:', serializeError(error));
+  initialize().catch((error) => {
+    log('初始化调用失败:', serializeError(error));
     updateWsState({
       status: 'error',
       lastError: '初始化失败: ' + serializeError(error),
-});
+    });
   });
 } catch (error) {
   console.error('[Core][WS] Service Worker 初始化异常:', error);
@@ -1900,25 +1900,61 @@ function initContextMenus() {
       log('[ContextMenu] 清除菜单项:', chrome.runtime.lastError.message);
     }
 
-    // 1）保存当前网站（任何位置都能用）
+    // 0) 创建根菜单
     chrome.contextMenus.create({
-      id: 'save-current-website',
-      title: '保存当前网站到 YiShe',
+      id: 'yishe-extension-root',
+      title: 'YiShe 扩展功能',
       contexts: ['all']
     });
 
-    // 2）保存选中文字（只在选中文字时显示）
+    // --- 分组 1: 采集与收藏 ---
+    chrome.contextMenus.create({
+      id: 'yishe-group-collect',
+      parentId: 'yishe-extension-root',
+      title: '采集与收藏',
+      contexts: ['all']
+    });
+
+    // 1-1）保存当前网站
+    chrome.contextMenus.create({
+      id: 'save-current-website',
+      parentId: 'yishe-group-collect',
+      title: '保存当前网站',
+      contexts: ['all']
+    });
+
+    // 1-2）保存选中文字
     chrome.contextMenus.create({
       id: 'save-selected-text',
-      title: '保存选中文字到 YiShe',
+      parentId: 'yishe-group-collect',
+      title: '保存选中文字',
       contexts: ['selection']
     });
 
-    // 3）上传图片到 YiShe 素材库（带AI分析）
+    // 1-3）上传图片到素材库
     chrome.contextMenus.create({
       id: 'upload-image-to-crawler',
-      title: '上传图片到 YiShe 素材库（AI分析）',
+      parentId: 'yishe-group-collect',
+      title: '上传图片到素材库（AI分析）',
       contexts: ['image']
+    });
+
+    // --- 分组 2: Temu 助手 ---
+    chrome.contextMenus.create({
+      id: 'yishe-group-temu',
+      parentId: 'yishe-extension-root',
+      title: 'Temu 助手',
+      contexts: ['all'],
+      documentUrlPatterns: ['*://*.temu.com/*']
+    });
+
+    // 2-1）清空 Temu 缓存
+    chrome.contextMenus.create({
+      id: 'clear-temu-cache',
+      parentId: 'yishe-group-temu',
+      title: '一键清空缓存 & Cookie',
+      contexts: ['all'],
+      documentUrlPatterns: ['*://*.temu.com/*']
     });
 
     log('[ContextMenu] 右键菜单已初始化');
@@ -1992,11 +2028,11 @@ function showUploadDialog(tabId, imageInfo) {
 
         if (response && response.action === 'upload') {
           log('[UploadDialog] 用户确认上传，包含文字:', !!response.selectedText);
-          
+
           // 立即显示 loading
           markImageUploading(imageInfo.imageUrl);
           showLoading(tabId, 'show', '正在上传图片到 YiShe 素材库...');
-          
+
           // 只返回用户选择，不执行上传
           resolve({ success: true, selectedText: response.selectedText || '' });
         } else {
@@ -2094,7 +2130,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       const favIconUrl = tab?.favIconUrl || null;
 
       const tabId = getTabId(tab);
-      
+
       if (!pageUrl) {
         log('[ContextMenu] 保存网站失败：未获取到页面地址');
         console.warn('[YiShe][SaveWebsite] 缺少页面地址，info =', info);
@@ -2135,7 +2171,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       const pageTitle = tab?.title || null;
 
       const tabId = getTabId(tab);
-      
+
       if (!selectedText || selectedText.trim().length === 0) {
         log('[ContextMenu] 保存文字失败：未获取到选中文字');
         console.warn('[YiShe][SaveText] 缺少选中文字，info =', info);
@@ -2232,6 +2268,67 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         }
       }
 
+      return;
+    }
+
+    // 4）清空 Temu 缓存
+    if (info.menuItemId === 'clear-temu-cache') {
+      const tabId = getTabId(tab);
+      const url = tab?.url || '';
+
+      if (!url.includes('temu.com')) {
+        showToast(tabId, 'warning', '只能在 Temu 网站上使用此功能');
+        return;
+      }
+
+      log('[ContextMenu] 开始清空 Temu 缓存...');
+      showLoading(tabId, 'show', '正在清空 Temu 缓存...');
+
+      try {
+        // 1. 清除 localStorage 和 sessionStorage
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => {
+            try {
+              localStorage.clear();
+              sessionStorage.clear();
+              return { success: true };
+            } catch (e) {
+              return { success: false, error: e.toString() };
+            }
+          }
+        });
+
+        // 2. 清除 Cookies
+        // 获取所有相关 cookie (temu.com 和 .temu.com)
+        const allCookies = await chrome.cookies.getAll({});
+        const temuCookies = allCookies.filter(c => c.domain.includes('temu.com'));
+
+        const cookiePromises = temuCookies.map((cookie) => {
+          // 构建正确的 URL 以便删除 cookie
+          const cookieUrl = "http" + (cookie.secure ? "s" : "") + "://" + cookie.domain + cookie.path;
+          return chrome.cookies.remove({
+            url: cookieUrl,
+            name: cookie.name
+          });
+        });
+
+        await Promise.all(cookiePromises);
+
+        log('[ContextMenu] Temu 缓存清理完成，清除 Cookie 数量:', cookiePromises.length);
+        showLoading(tabId, 'hide');
+        showToast(tabId, 'success', 'Temu 缓存已清空，页面即将刷新');
+
+        // 3. 刷新页面
+        setTimeout(() => {
+          chrome.tabs.reload(tabId);
+        }, 1000);
+
+      } catch (error) {
+        log('[ContextMenu] 清空缓存失败:', serializeError(error));
+        showLoading(tabId, 'hide');
+        showToast(tabId, 'error', '清空缓存失败: ' + error.message);
+      }
       return;
     } else {
       // 其他未知菜单项（目前理论上不会出现）
