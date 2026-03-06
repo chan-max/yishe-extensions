@@ -22,6 +22,28 @@
     }
   }
 
+  // 全站点解锁右键菜单（拦截页面自定义 contextmenu 处理）
+  function enableContextMenu() {
+    try {
+      window.addEventListener('contextmenu', (event) => {
+        event.stopImmediatePropagation();
+        event.stopPropagation();
+        // 不调用 preventDefault，保留浏览器原生右键菜单
+      }, true);
+
+      document.addEventListener('contextmenu', (event) => {
+        const target = event.target;
+        if (target && target.oncontextmenu) {
+          target.oncontextmenu = null;
+        }
+      }, true);
+
+      document.oncontextmenu = null;
+    } catch (error) {
+      console.error('[Core] 解除右键限制失败:', error);
+    }
+  }
+
   // 加载基础功能模块
   function loadSiteModule() {
       loadModule('common');
@@ -80,6 +102,9 @@
 
     document.head.appendChild(script);
   }
+
+  // 初始化
+  enableContextMenu();
 
   // 上传弹窗相关变量
   let uploadDialog = null;
