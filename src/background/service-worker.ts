@@ -2503,7 +2503,7 @@ function initContextMenus() {
       contexts: ["all"],
     });
 
-    // 1-6）保存当前预览文件到文件资源
+    // 1-7）保存当前预览文件到文件资源
     chrome.contextMenus.create({
       id: "save-current-file-resource",
       parentId: "yishe-group-collect",
@@ -2511,19 +2511,11 @@ function initContextMenus() {
       contexts: ["all"],
     });
 
-    // 1-7）采集当前页商品信息
-    chrome.contextMenus.create({
-      id: "collect-product-info",
-      parentId: "yishe-group-collect",
-      title: "采集当前页商品信息",
-      contexts: ["all"],
-    });
-
-    // 1-8）采集当前页商品信息并AI分析
+    // 1-8）采集并AI分析当前页商品
     chrome.contextMenus.create({
       id: "collect-product-info-with-ai",
       parentId: "yishe-group-collect",
-      title: "采集当前页商品信息并AI分析",
+      title: "采集并分析当前页商品",
       contexts: ["all"],
     });
 
@@ -3573,11 +3565,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       return;
     }
 
-    // 5）采集当前页商品信息
-    if (
-      info.menuItemId === "collect-product-info" ||
-      info.menuItemId === "collect-product-info-with-ai"
-    ) {
+    // 5）采集并AI分析当前页商品
+    if (info.menuItemId === "collect-product-info-with-ai") {
       const tabId = getTabId(tab);
       const pageUrl = tab?.url || info.pageUrl || "";
 
@@ -3590,19 +3579,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         return;
       }
 
-      const withAi = info.menuItemId === "collect-product-info-with-ai";
-
       try {
-        showLoading(
-          tabId,
-          "show",
-          withAi ? "正在采集商品信息并AI分析..." : "正在采集商品信息...",
-        );
+        showLoading(tabId, "show", "正在采集并AI分析...");
 
-        // 在当前页面执行提取脚本
+        // 提取商品数据
         const results = await chrome.scripting.executeScript({
           target: { tabId },
-          func: (doAiAnalysis) => {
+          func: () => {
             if (!window.CoreProductExtractor) {
               return { success: false, error: "商品提取器未加载" };
             }
@@ -3611,7 +3594,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
               data: window.CoreProductExtractor.extract(),
             };
           },
-          args: [withAi],
         });
 
         if (!results || !results[0] || !results[0].result) {
@@ -3628,45 +3610,36 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           throw new Error("未能提取到商品标题，可能不是商品页面");
         }
 
-        // 如果需要 AI 分析，在 content script 中执行
-        let aiAnalysis = null;
-        let aiModel = null;
-        let aiProvider = null;
-
-        if (withAi) {
-          showLoading(tabId, "show", "正在进行 AI 分析...");
-
-          const aiResults = await chrome.scripting.executeScript({
-            target: { tabId },
-            func: (pData) => {
-              if (
-                !window.CoreSiteModules?.productCollector?.performAiAnalysis
-              ) {
-                return { success: false, error: "AI 分析模块未加载" };
-              }
-              return window.CoreSiteModules.productCollector
-                .performAiAnalysis(pData)
-                .then((result) => ({ success: true, data: result }))
-                .catch((err) => ({ success: false, error: err.message }));
-            },
-            args: [productData],
-          });
-
-          if (aiResults && aiResults[0] && aiResults[0].result) {
-            const aiResult = aiResults[0].result;
-            if (aiResult.success) {
-              aiAnalysis = aiResult.data.analysis;
-              aiModel = aiResult.data.model;
-              aiProvider = aiResult.data.provider;
-            } else {
-              log("[ContextMenu] AI 分析失败:", aiResult.error);
-              showToast(
-                tabId,
-                "warning",
-                `AI 分析失败: ${aiResult.error}，仅保存原始数据`,
-              );
+        // AI 分析
+        showLoading(tabId, "show", "正在进行 AI 分析...");
+        const aiResults = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: (pData) => {
+            if (!window.CoreSiteModules?.productCollector?.performAiAnalysis) {
+              return { success: false, error: "AI 分析模块未加载" };
             }
+            return window.CoreSiteModules.productCollector
+              .performAiAnalysis(pData)
+              .then((result) => ({ success: true, data: result }))
+              .catch((err) => ({ success: false, error: err.message }));
+          },
+          args: [productData],
+        });
+
+        let aiAnalysis = null;
+        if (aiResults && aiResults[0] && aiResults[0].result) {
+          const aiResult = aiResults[0].result;
+          if (aiResult.success) {
+            aiAnalysis = {
+              ...aiResult.data.analysis,
+              model: aiResult.data.model,
+              provider: aiResult.data.provider,
+            };
+          } else {
+            throw new Error(`AI 分析失败: ${aiResult.error}`);
           }
+        } else {
+          throw new Error("AI 分析脚本执行失败");
         }
 
         // 提交到服务端
@@ -3674,40 +3647,23 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         const collectData = {
           collectType: "product",
           sourceUrl: productData.url,
-          sourceTitle: productData.title,
+          sourceTitle: (productData.title || "").substring(0, 500),
           data: {
             title: productData.title,
-            description: productData.description,
             price: productData.price,
             currency: productData.currency,
             images: productData.images,
             coverImage: productData.coverImage,
-            specifications: productData.specifications,
-            brand: productData.brand,
-            rating: productData.rating,
-            reviewCount: productData.reviewCount,
-            seller: productData.seller,
-            category: productData.category,
             platform: productData.platform,
           },
-          aiAnalysis: aiAnalysis
-            ? {
-                ...aiAnalysis,
-                model: aiModel,
-                provider: aiProvider,
-              }
-            : null,
+          aiAnalysis: aiAnalysis,
         };
 
         const result = await collectProductToServer(collectData);
         showLoading(tabId, "hide");
 
         if (result.success) {
-          showToast(
-            tabId,
-            "success",
-            withAi ? "商品采集并AI分析完成！" : "商品采集成功！",
-          );
+          showToast(tabId, "success", "采集并分析完成！");
         } else {
           showToast(
             tabId,

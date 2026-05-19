@@ -439,32 +439,54 @@
     const mainSelectors = [
       "main",
       "#main-content",
+      "#productDescription",
+      "#feature-bullets",
       ".product-description",
       ".product-details",
       ".product-info",
       '[data-hook="description"]',
-      "#productDescription",
-      "#feature-bullets",
       ".detail-desc",
       ".product-desc",
+      "#aplus",
+      "#descriptionAndDetails",
     ];
 
+    const textParts = [];
+
+    // 1. 先尝试提取主要内容区域
     for (const selector of mainSelectors) {
       const el = document.querySelector(selector);
       if (el) {
         const text = el.innerText.trim();
         if (text.length > 50) {
-          return text.substring(0, 8000);
+          textParts.push(`[${selector}]\n${text}`);
         }
       }
     }
 
-    // fallback: 取 body 的中间部分
-    const bodyText = document.body.innerText;
-    if (bodyText.length > 8000) {
-      return bodyText.substring(0, 8000);
+    // 2. 如果找到了主要内容，返回
+    if (textParts.length > 0) {
+      return textParts.join('\n\n').substring(0, 15000);
     }
-    return bodyText;
+
+    // 3. fallback: 提取整个 body（排除导航、页脚等）
+    const excludeSelectors = [
+      'nav', 'footer', 'header',
+      '.nav', '.footer', '.header',
+      '#nav', '#footer', '#header',
+      '.sidebar', '#sidebar',
+      'script', 'style', 'noscript'
+    ];
+
+    // 克隆 body 并排除不需要的元素
+    const bodyClone = document.body.cloneNode(true);
+    for (const selector of excludeSelectors) {
+      const elements = bodyClone.querySelectorAll(selector);
+      elements.forEach(el => el.remove());
+    }
+
+    const bodyText = bodyClone.innerText.trim();
+    return bodyText.substring(0, 15000);
   }
 
   // ========== 主提取函数 ==========

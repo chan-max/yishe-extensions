@@ -1,6 +1,6 @@
 // @ts-nocheck
 // product-collector.ts: 商品采集站点模块
-// 提供商品信息采集 + AI 分析功能
+// 采集 + AI 分析一体化
 
 if (!window.CoreSiteModules) {
   window.CoreSiteModules = {};
@@ -14,23 +14,16 @@ window.CoreSiteModules.productCollector = {
   async getMenuItems(siteInfo) {
     return [
       {
-        icon: "🛒",
-        label: "采集商品信息",
-        action: () => {
-          this.collectProduct(false);
-        },
-      },
-      {
         icon: "🤖",
-        label: "采集并AI分析",
+        label: "采集并分析",
         action: () => {
-          this.collectProduct(true);
+          this.collectAndAnalyze();
         },
       },
     ];
   },
 
-  async collectProduct(withAiAnalysis) {
+  async collectAndAnalyze() {
     if (!window.CoreProductExtractor) {
       window.CoreToast?.show?.({ message: "商品提取器未加载", type: "error" });
       return;
@@ -46,18 +39,9 @@ window.CoreSiteModules.productCollector = {
         throw new Error("未能提取到商品标题，可能不是商品页面");
       }
 
-      // 2. 如果需要 AI 分析
-      let aiAnalysis = null;
-      let aiModel = null;
-      let aiProvider = null;
-
-      if (withAiAnalysis) {
-        window.CoreLoading?.update?.(loadingId, "正在进行 AI 分析...");
-        const aiResult = await this.performAiAnalysis(productData);
-        aiAnalysis = aiResult.analysis;
-        aiModel = aiResult.model;
-        aiProvider = aiResult.provider;
-      }
+      // 2. AI 分析
+      window.CoreLoading?.update?.(loadingId, "正在进行 AI 分析...");
+      const aiResult = await this.performAiAnalysis(productData);
 
       // 3. 发送到 background 保存到服务端
       window.CoreLoading?.update?.(loadingId, "正在保存到服务端...");
@@ -67,29 +51,43 @@ window.CoreSiteModules.productCollector = {
         data: {
           collectType: "product",
           sourceUrl: productData.url,
-          sourceTitle: productData.title,
+          sourceTitle: (productData.title || "").substring(0, 500),
           data: {
+            // 基本信息
             title: productData.title,
             description: productData.description,
+            platform: productData.platform,
+            
+            // 价格信息
             price: productData.price,
             currency: productData.currency,
+            
+            // 媒体
             images: productData.images,
             coverImage: productData.coverImage,
+            
+            // 规格参数
             specifications: productData.specifications,
             brand: productData.brand,
+            
+            // 评价
             rating: productData.rating,
             reviewCount: productData.reviewCount,
+            
+            // 卖家
             seller: productData.seller,
+            
+            // 分类
             category: productData.category,
-            platform: productData.platform,
+            
+            // 页面文本内容（供 AI 分析）
+            mainText: productData.mainText?.substring(0, 15000),
           },
-          aiAnalysis: aiAnalysis
-            ? {
-                ...aiAnalysis,
-                model: aiModel,
-                provider: aiProvider,
-              }
-            : null,
+          aiAnalysis: {
+            ...aiResult.analysis,
+            model: aiResult.model,
+            provider: aiResult.provider,
+          },
         },
       };
 
@@ -98,7 +96,7 @@ window.CoreSiteModules.productCollector = {
 
         if (response && response.success) {
           window.CoreToast?.show?.({
-            message: withAiAnalysis ? "商品采集并分析完成！" : "商品采集成功！",
+            message: "采集并分析完成！",
             type: "success",
             duration: 3000,
           });
@@ -121,7 +119,6 @@ window.CoreSiteModules.productCollector = {
   },
 
   async performAiAnalysis(productData) {
-    // 通过服务端接口获取用户的 AI API Key
     const aiKeyData = await this.fetchUserApiKey();
 
     if (!aiKeyData || !aiKeyData.encryptedKey) {
@@ -148,7 +145,7 @@ window.CoreSiteModules.productCollector = {
             {
               role: "system",
               content:
-                "你是一个电商选品专家和数据分析专家。请分析商品信息，输出结构化的 JSON 分析结果。只输出 JSON，不要输出其他内容。",
+                "你是一个电商选品专家。请分析商品信息，输出精简有效的结构化 JSON。只输出 JSON，不要其他内容。",
             },
             {
               role: "user",
@@ -175,15 +172,9 @@ window.CoreSiteModules.productCollector = {
       throw new Error("AI 返回内容为空");
     }
 
-    let analysis;
-    try {
-      analysis = JSON.parse(content);
-    } catch (e) {
-      throw new Error("AI 返回的 JSON 格式无效");
-    }
-
+    // 直接返回 Markdown 字符串
     return {
-      analysis,
+      analysis: content,
       model: model,
       provider: aiKeyData.name || "openai",
     };
@@ -209,53 +200,53 @@ window.CoreSiteModules.productCollector = {
   },
 
   buildAnalysisPrompt(productData) {
-    const specText = productData.specifications
-      ? Object.entries(productData.specifications)
-          .map(([k, v]) => `  - ${k}: ${v}`)
-          .join("\n")
-      : "无";
-
-    const categoryText = productData.category
-      ? productData.category.join(" > ")
-      : "未知";
-    const ratingText = productData.rating
-      ? `${productData.rating.value}/${productData.rating.max}`
-      : "无";
-    const reviewText = productData.reviewCount
-      ? `${productData.reviewCount.count} 条`
-      : "无";
-
-    return `请分析以下商品信息，输出 JSON 格式的分析结果。
+    return `请分析以下商品，生成一份 Markdown 格式的分析报告。
 
 商品来源：${productData.platform}
 商品链接：${productData.url}
 商品标题：${productData.title}
-价格信息：${productData.price || "未知"} ${productData.currency || ""}
+价格：${productData.price || "未知"} ${productData.currency || ""}
 品牌：${productData.brand || "未知"}
-分类：${categoryText}
-评分：${ratingText}
-评论数：${reviewText}
+评分：${productData.rating ? `${productData.rating.value}/${productData.rating.max}` : "无"}
+评论数：${productData.reviewCount ? `${productData.reviewCount.count} 条` : "无"}
 卖家：${productData.seller?.name || "未知"}
 
-规格参数：
-${specText}
+请输出 Markdown 格式的分析报告，包含以下内容（可根据实际情况灵活调整）：
 
-商品描述：
-${(productData.description || productData.mainText || "无").substring(0, 3000)}
+# 商品名称
 
-请输出以下 JSON 格式：
-{
-  "summary": "一句话总结这个商品的核心卖点",
-  "sellingPoints": ["卖点1", "卖点2", "卖点3"],
-  "targetAudience": "目标消费人群描述",
-  "priceAnalysis": "价格区间分析，是否有竞争力",
-  "competitiveAdvantages": ["竞争优势1", "竞争优势2"],
-  "potentialIssues": ["潜在问题或风险1", "潜在问题或风险2"],
-  "suggestedKeywords": ["关键词1", "关键词2", "关键词3", "关键词4", "关键词5"],
-  "categorySuggestion": "建议的商品分类",
-  "podElements": ["可提取的设计元素1", "设计元素2"],
-  "qualityScore": 8,
-  "marketPotential": "high/medium/low"
-}`;
+## 基本信息
+用表格展示价格、品牌、评分、卖家等
+
+## 一句话总结
+简要描述这个商品的核心价值
+
+## 核心卖点
+- 卖点1
+- 卖点2
+- ...
+
+## 目标人群
+描述目标消费群体
+
+## 价格分析
+价格区间、是否有竞争力
+
+## 竞品参考
+列出竞品或替代品
+
+## 关键词
+相关搜索关键词
+
+## 市场潜力
+评估市场潜力（高/中/低）及原因
+
+## 风险提示
+潜在问题或风险
+
+## 设计元素（如果是图案/服饰类）
+可提取的 POD 设计元素
+
+请直接输出 Markdown，不要加 \`\`\`markdown 代码块标记。`;
   },
 };
