@@ -2330,6 +2330,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request?.action === "uploadImageToGallery") {
+    const tabId = sender?.tab?.id ?? null;
+    const imageUrl = normalizeUploadUrl(request.imageUrl);
+
+    if (!imageUrl) {
+      sendResponse({ success: false, error: "未识别到可上传的图片地址" });
+      return true;
+    }
+
+    ensureClientConnectionAllowed("hover-image-upload")
+      .then((access) => {
+        if (!access.allowed) {
+          throw new Error(access.reason);
+        }
+        if (isImageUploading(imageUrl, "sticker")) {
+          throw new Error("这张图片正在上传，请稍候");
+        }
+        return performUpload(tabId, imageUrl, "sticker", {
+          showLoadingOverlay: false,
+        });
+      })
+      .then((result) => sendResponse({ success: true, data: result }))
+      .catch((error) =>
+        sendResponse({ success: false, error: serializeError(error) }),
+      );
+    return true;
+  }
+
   if (request?.action === "collectPageImagesToCrawler") {
     const tabId = sender?.tab?.id ?? null;
     collectPageImagesToCrawler(tabId, request.imageUrls)
@@ -3107,6 +3135,82 @@ function inferImageExtension(imageUrl, contentType) {
   return "jpg";
 }
 
+function hasImageSignature(bytes, offset, signature) {
+  if (bytes.length < offset + signature.length) {
+    return false;
+  }
+
+  return signature.every((value, index) => bytes[offset + index] === value);
+}
+
+function readAscii(bytes, start, length) {
+  return String.fromCharCode(...bytes.slice(start, start + length));
+}
+
+async function detectImageContentType(blob) {
+  try {
+    const buffer = await blob.slice(0, 512).arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+
+    if (hasImageSignature(bytes, 0, [0xff, 0xd8, 0xff])) {
+      return "image/jpeg";
+    }
+    if (
+      hasImageSignature(bytes, 0, [
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      ])
+    ) {
+      return "image/png";
+    }
+    if (
+      hasImageSignature(bytes, 0, [0x47, 0x49, 0x46, 0x38])
+    ) {
+      return "image/gif";
+    }
+    if (
+      hasImageSignature(bytes, 0, [0x52, 0x49, 0x46, 0x46]) &&
+      readAscii(bytes, 8, 4) === "WEBP"
+    ) {
+      return "image/webp";
+    }
+    if (hasImageSignature(bytes, 0, [0x42, 0x4d])) {
+      return "image/bmp";
+    }
+    if (
+      hasImageSignature(bytes, 0, [0x49, 0x49, 0x2a, 0x00]) ||
+      hasImageSignature(bytes, 0, [0x4d, 0x4d, 0x00, 0x2a])
+    ) {
+      return "image/tiff";
+    }
+    if (hasImageSignature(bytes, 0, [0x00, 0x00, 0x01, 0x00])) {
+      return "image/x-icon";
+    }
+
+    if (readAscii(bytes, 4, 4) === "ftyp") {
+      const brand = readAscii(bytes, 8, 4).toLowerCase();
+      if (brand === "avif" || brand === "avis") {
+        return "image/avif";
+      }
+      if (["heic", "heix", "hevc", "hevx", "mif1", "msf1"].includes(brand)) {
+        return "image/heif";
+      }
+    }
+
+    const text = new TextDecoder()
+      .decode(bytes)
+      .replace(/^\uFEFF/, "")
+      .trimStart()
+      .toLowerCase();
+    if (text.startsWith("<svg") || (text.startsWith("<?xml") && /<svg[\s>]/i.test(text))) {
+      return "image/svg+xml";
+    }
+  } catch (error) {
+    log("[Upload] 检测图片文件头失败:", serializeError(error));
+  }
+
+  return "";
+}
+
 function sanitizeFileName(value, fallback = "file") {
   let decodedValue = String(value || "").trim();
   try {
@@ -3374,17 +3478,34 @@ async function fetchImagePayloadForUpload(imageUrl) {
     throw new Error(`图片抓取失败（HTTP ${response.status}）`);
   }
 
-  const contentType = String(
+  const blob = await response.blob();
+  const fileSize = Number(blob.size || 0);
+  if (fileSize <= 0) {
+    throw new Error("图片内容为空，无法上传");
+  }
+  if (fileSize > 50 * 1024 * 1024) {
+    throw new Error("图片文件过大，请选择小于50MB的图片");
+  }
+
+  const declaredContentType = String(
     response.headers.get("content-type") || "",
-  ).toLowerCase();
+  )
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  const detectedContentType = await detectImageContentType(blob);
+  const contentType = detectedContentType || declaredContentType;
+
   if (!contentType.startsWith("image/")) {
     throw new Error("当前链接返回的不是图片内容");
   }
 
-  const blob = await response.blob();
-  const fileSize = Number(blob.size || 0);
-  if (fileSize > 50 * 1024 * 1024) {
-    throw new Error("图片文件过大，请选择小于50MB的图片");
+  if (!declaredContentType.startsWith("image/") && detectedContentType) {
+    log("[Upload] 响应类型不是 image/*，已根据图片文件头修正:", {
+      declaredContentType,
+      detectedContentType,
+      imageUrl,
+    });
   }
 
   const imageData = await blobToDataUrl(blob);

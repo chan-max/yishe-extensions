@@ -1,6 +1,6 @@
 {
   "name": "yishe-extensions",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "private": true,
   "description": "YiShe browser extension rebuilt with WXT, Vue, and Element Plus",
   "scripts": {

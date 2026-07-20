@@ -1,9 +1,11 @@
 import "@/content/robot.css";
+import "@/content/linked-image-uploader.css";
 
 import "@/content/core/dom-utils";
 import "@/content/core/ui-theme";
 import "@/content/core/page-image-collector";
 import "@/content/core/product-extractor";
+import "@/content/core/linked-image-uploader";
 import "@/content/core/site-detector";
 import "@/content/core/floating-robot";
 import "@/content/sites/common";
