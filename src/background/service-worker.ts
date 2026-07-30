@@ -111,6 +111,24 @@ const LOCAL_CLIENT_LOGIN_REQUIRED_MESSAGE = "请先登录并启动本地客户�
 const LOCAL_CLIENT_ACCOUNT_REQUIRED_MESSAGE = "本地客户端未返回当前账号";
 const LOCAL_CLIENT_ACCOUNT_MISMATCH_MESSAGE = "本地客户端账号与扩展账号不一致";
 
+// 派生本地服务密钥 — 从 Electron 客户端获取（需要客户端已登录）
+let cachedLocalSecret: string | null = null;
+async function getLocalServiceSecret(): Promise<string> {
+  if (cachedLocalSecret) return cachedLocalSecret;
+  try {
+    const clientBaseUrl = await getEffectiveClientBaseUrl();
+    const res = await fetch(`${clientBaseUrl}/api/client-secret`, {
+      cache: "no-store",
+    });
+    const data = await res.json();
+    if (data.secret) {
+      cachedLocalSecret = data.secret;
+      return data.secret;
+    }
+  } catch {}
+  return "";
+}
+
 // 客户端元信息（浏览器、系统、扩展版本等）
 let clientMetadata = null;
 let clientMetadataPromise = null;
@@ -3008,11 +3026,13 @@ async function performUpload(tabId, imageUrl, target, options = {}) {
       backgroundGlobal.ApiConfig?.CLIENT_ENDPOINTS?.MATERIAL_UPLOAD ||
       "/api/material-upload";
     const clientUploadUrl = `${clientBaseUrl}${clientUploadPath}`;
+    const localSecret = await getLocalServiceSecret();
 
     const response = await fetch(clientUploadUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-Local-Secret": localSecret,
       },
       body: JSON.stringify(payload),
     });
@@ -3413,11 +3433,13 @@ async function performFileResourceUpload(tabId, fileUrl) {
       backgroundGlobal.ApiConfig?.CLIENT_ENDPOINTS?.FILE_UPLOAD ||
       "/api/file-upload";
     const clientUploadUrl = `${clientBaseUrl}${clientUploadPath}`;
+    const localSecret = await getLocalServiceSecret();
 
     const response = await fetch(clientUploadUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-Local-Secret": localSecret,
       },
       body: JSON.stringify({
         url: fileUrl,
