@@ -2473,7 +2473,101 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
+
+  // OAuth 回调处理
+  if (request.action === "oauthCallback") {
+    handleOAuthCallback(request.code, request.redirectUri)
+      .then((token) => sendResponse({ success: true, token }))
+      .catch((error) =>
+        sendResponse({ success: false, error: serializeError(error) }),
+      );
+    return true;
+  }
+
+  // 打开 OAuth 授权页面
+  if (request.action === "openOAuthPage") {
+    openOAuthAuthorizePage()
+      .then(() => sendResponse({ success: true }))
+      .catch((error) =>
+        sendResponse({ success: false, error: serializeError(error) }),
+      );
+    return true;
+  }
 });
+
+/**
+ * 处理 OAuth 回调：用授权码换取 token
+ */
+async function handleOAuthCallback(code: string, redirectUri: string): Promise<string> {
+  const apiBaseUrl = await getApiBaseUrl();
+  const response = await fetch(`${apiBaseUrl}/oauth/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      code,
+      client_id: "yishe-extension",
+      client_secret: "yishe-extension-secret-2026",
+      redirect_uri: redirectUri,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "Token 交换失败");
+    throw new Error(errorText);
+  }
+
+  const data = await response.json();
+  const token = data.accessToken || data.access_token;
+  if (!token) {
+    throw new Error("响应中未找到 token");
+  }
+
+  // 保存 token
+  await storageSet({ [AUTH_TOKEN_KEY]: token });
+
+  // 获取用户信息
+  try {
+    const userResponse = await fetch(`${apiBaseUrl}/user/getUserInfo`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (userResponse.ok) {
+      const userData = await userResponse.json();
+      const userInfo = userData.data || userData;
+      await storageSet({ [AUTH_USER_INFO_KEY]: userInfo });
+    }
+  } catch (e) {
+    log("获取用户信息失败:", serializeError(e));
+  }
+
+  return token;
+}
+
+/**
+ * 打开 OAuth 授权页面
+ */
+async function openOAuthAuthorizePage(): Promise<void> {
+  const apiBaseUrl = await getApiBaseUrl();
+  const authorizeBaseUrl = apiBaseUrl.includes("localhost")
+    ? "http://localhost:1521"
+    : "https://admin.1s.design";
+  const redirectUri = browser.runtime.getURL("/oauth-callback.html");
+
+  const params = new URLSearchParams({
+    client_id: "yishe-extension",
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "user:read user:write",
+  });
+
+  const authorizeUrl = `${authorizeBaseUrl}/oauth/authorize?${params.toString()}`;
+  await browser.tabs.create({ url: authorizeUrl });
+}
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete" && tab.url) {
