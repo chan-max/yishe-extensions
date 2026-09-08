@@ -7,6 +7,7 @@
   }
 
   const ROOT_ID = "yishe-linked-image-upload-root";
+  const STORAGE_KEY = "imageHoverEnabled";
   const IMAGE_EXTENSION_PATTERN =
     /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/i;
   const IMAGE_FORMAT_VALUES = new Set([
@@ -23,6 +24,7 @@
   ]);
 
   const state = {
+    enabled: true,
     activeHoverTarget: null,
     sourceElement: null,
     imageUrl: "",
@@ -228,16 +230,17 @@
       <button
         class="yishe-linked-image-upload-button"
         type="button"
-        title="上传图片到 YiShe 图库"
-        aria-label="上传图片到 YiShe 图库"
+        title="保存图片到 YiShe 图库"
+        aria-label="保存图片到 YiShe 图库"
       >
         <span class="yishe-linked-image-upload-icon" aria-hidden="true">↑</span>
-        <span class="yishe-linked-image-upload-label">上传到图库</span>
+        <span class="yishe-linked-image-upload-label">保存</span>
       </button>
     `;
 
     const button = root.querySelector("button");
     button.addEventListener("click", handleUploadClick);
+
     root.addEventListener("pointerenter", cancelHide);
     root.addEventListener("pointerleave", scheduleHide);
     document.documentElement.appendChild(root);
@@ -257,11 +260,11 @@
     if (nextState === "uploading") {
       label.textContent = "上传中";
     } else if (nextState === "success") {
-      label.textContent = "已上传";
+      label.textContent = "已保存";
     } else if (nextState === "error") {
-      label.textContent = "上传失败";
+      label.textContent = "失败";
     } else {
-      label.textContent = "上传到图库";
+      label.textContent = "保存";
     }
   }
 
@@ -277,11 +280,30 @@
       return;
     }
     cancelHide();
+    if (state.positionFrame !== null) {
+      cancelAnimationFrame(state.positionFrame);
+      state.positionFrame = null;
+    }
     root.classList.remove("is-visible");
     state.activeHoverTarget = null;
     state.sourceElement = null;
     state.imageUrl = "";
     setButtonState("idle");
+  }
+
+  function applyEnabled(nextEnabled) {
+    state.enabled = nextEnabled !== false;
+    if (!state.enabled) {
+      hide();
+      if (root) {
+        root.classList.remove("is-visible");
+        root.style.setProperty("display", "none", "important");
+      }
+    } else {
+      if (root) {
+        root.style.removeProperty("display");
+      }
+    }
   }
 
   function scheduleHide() {
@@ -304,13 +326,13 @@
     }
 
     const rect = source.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0 || rect.bottom < 0 || rect.top > innerHeight) {
+    if (rect.width <= 0 || rect.height <= 0 || rect.bottom < 0 || rect.top > (window.innerHeight || innerHeight)) {
       hide();
       return;
     }
 
-    const buttonWidth = root.offsetWidth || 92;
-    const buttonHeight = root.offsetHeight || 28;
+    const buttonWidth = root.offsetWidth || 52;
+    const buttonHeight = root.offsetHeight || 22;
     const horizontalInset = 6;
     const verticalInset = 6;
     const top =
@@ -319,8 +341,8 @@
         : rect.bottom + verticalInset;
     const left = rect.left + horizontalInset;
 
-    root.style.top = `${Math.max(6, Math.min(top, innerHeight - buttonHeight - 6))}px`;
-    root.style.left = `${Math.max(6, Math.min(left, innerWidth - buttonWidth - 6))}px`;
+    root.style.top = `${Math.max(6, Math.min(top, (window.innerHeight || innerHeight) - buttonHeight - 6))}px`;
+    root.style.left = `${Math.max(6, Math.min(left, (window.innerWidth || innerWidth) - buttonWidth - 6))}px`;
   }
 
   function schedulePosition() {
@@ -331,6 +353,9 @@
   }
 
   function show(resolved) {
+    if (!state.enabled) {
+      return;
+    }
     cancelHide();
     const changed =
       state.activeHoverTarget !== resolved.hoverTarget ||
@@ -411,7 +436,7 @@
   }
 
   function handlePointerOver(event) {
-    if (state.uploading || root.contains(event.target)) {
+    if (!state.enabled || state.uploading || root.contains(event.target)) {
       return;
     }
 
@@ -445,6 +470,10 @@
   }
 
   function handleFocusIn(event) {
+    if (!state.enabled) {
+      return;
+    }
+
     const anchor = findAnchorFromEvent(event);
     const image = findImageFromEvent(event);
     const resolved = resolveLinkedImage(anchor, image || event.target);
@@ -460,8 +489,62 @@
   window.addEventListener("scroll", schedulePosition, true);
   window.addEventListener("resize", schedulePosition);
 
+  // 初始读取本地配置
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      chrome.storage.local.get([STORAGE_KEY], (res) => {
+        if (chrome.runtime?.lastError) return;
+        const val = res ? res[STORAGE_KEY] : undefined;
+        applyEnabled(val !== false);
+      });
+    }
+  } catch (_) {}
+
+  // 监听跨 Tab 的 chrome.storage.local 变更
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
+      chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === "local" && STORAGE_KEY in changes) {
+          const next = changes[STORAGE_KEY]?.newValue !== false;
+          applyEnabled(next);
+        }
+      });
+    }
+  } catch (_) {}
+
+  // 监听即时广播消息（实时生效，无需刷新）
+  try {
+    if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+      chrome.runtime.onMessage.addListener((message) => {
+        if (message && message.action === "yishe:set-image-hover-enabled") {
+          applyEnabled(message.enabled !== false);
+        }
+      });
+    }
+  } catch (_) {}
+
+  // 页面内全局事件支持
+  window.addEventListener("yishe:image-hover:set-enabled", (event) => {
+    if (event?.detail && typeof event.detail.enabled === "boolean") {
+      applyEnabled(event.detail.enabled);
+    }
+  });
+
   window.CoreLinkedImageUploader = {
     hide,
     resolveLinkedImage,
+    applyEnabled,
+    setEnabled(enabled) {
+      const next = enabled !== false;
+      applyEnabled(next);
+      try {
+        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+          chrome.storage.local.set({ [STORAGE_KEY]: next });
+        }
+      } catch (_) {}
+    },
+    isEnabled() {
+      return state.enabled !== false;
+    },
   };
 })();

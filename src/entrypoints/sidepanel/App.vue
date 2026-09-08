@@ -7,17 +7,33 @@ import {
   TopRight,
   Setting,
   Check,
+  Picture,
 } from "@element-plus/icons-vue";
 
 import { useActiveTab } from "@/composables/useActiveTab";
 import { useUserSession } from "@/composables/useUserSession";
 import { useWebsocketStatus } from "@/composables/useWebsocketStatus";
 import { useDevMode } from "@/composables/useDevMode";
+import { useImageHoverSetting } from "@/composables/useImageHoverSetting";
 import { openExtensionTab } from "@/shared/extension";
 import type { SiteAction } from "@/shared/site-adapter/types";
 
 // 活跃页面感知与站点模块匹配
 const { currentTab, matchedModule, refreshTab } = useActiveTab();
+
+// 图片悬停工具开关
+const {
+  loading: hoverSettingLoading,
+  imageHoverEnabled,
+  setEnabled: setImageHoverEnabled,
+} = useImageHoverSetting();
+
+async function handleToggleHover(val: boolean | string | number) {
+  const next = Boolean(val);
+  await setImageHoverEnabled(next);
+  ElMessage.success(next ? "已开启图片悬浮保存" : "已关闭图片悬浮保存");
+}
+
 
 // 会话与连接状态
 const { authenticated, userInfo } = useUserSession();
@@ -89,6 +105,14 @@ async function handleRefreshAll() {
       <div class="navbar-actions">
         <button
           class="nav-btn"
+          :class="{ 'is-active': imageHoverEnabled }"
+          :title="imageHoverEnabled ? '图片悬浮保存已开启 (点击可关闭)' : '图片悬浮保存已关闭 (点击可开启)'"
+          @click="handleToggleHover(!imageHoverEnabled)"
+        >
+          <el-icon><Picture /></el-icon>
+        </button>
+        <button
+          class="nav-btn"
           title="刷新信息"
           @click="handleRefreshAll"
         >
@@ -130,25 +154,42 @@ async function handleRefreshAll() {
           </p>
         </div>
       </div>
+
+      <!-- 图片悬浮保存快捷控制 -->
+      <div class="sp-feature-toggle">
+        <div class="sp-feature-left">
+          <el-icon class="sp-feature-icon"><Picture /></el-icon>
+          <span class="sp-feature-title">图片悬浮保存</span>
+        </div>
+        <el-switch
+          :model-value="imageHoverEnabled"
+          :loading="hoverSettingLoading"
+          size="small"
+          inline-prompt
+          active-text="开"
+          inactive-text="关"
+          @change="handleToggleHover"
+        />
+      </div>
     </section>
 
-    <!-- 站点适配功能区 -->
+    <!-- 站点适配与网页工具功能区 -->
     <main class="actions-container">
       <div v-if="isInternalPage" class="internal-tip-card">
         <span>在普通网页上浏览时，将自动激活对应功能与素材工具</span>
       </div>
 
-      <div v-else-if="!matchedModule.actions.length" class="empty-site-card">
-        <span class="empty-dot" />
-        <span class="empty-text">当前站点暂无专属适配功能</span>
-      </div>
-
       <template v-else>
         <div class="actions-header">
-          <span class="section-label">专属功能</span>
+          <span class="section-label">可用操作 ({{ matchedModule.name }})</span>
         </div>
 
-        <div class="action-list">
+        <div v-if="!matchedModule.actions.length" class="empty-site-card">
+          <span class="empty-dot" />
+          <span class="empty-text">当前站点暂无专属适配功能</span>
+        </div>
+
+        <div v-else class="action-list">
           <div
             v-for="action in matchedModule.actions"
             :key="action.id"
@@ -359,6 +400,40 @@ async function handleRefreshAll() {
   white-space: nowrap;
 }
 
+.sp-feature-toggle {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sp-feature-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sp-feature-icon {
+  font-size: 13px;
+  color: #4f46e5;
+}
+
+.sp-feature-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: #334155;
+}
+
+.nav-btn.is-active {
+  color: #4f46e5;
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
 /* 功能列表区 */
 .actions-container {
   flex: 1;
@@ -447,6 +522,24 @@ async function handleRefreshAll() {
 .action-card.is-primary:hover {
   border-color: #a5b4fc;
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.12);
+}
+
+.action-card.is-tool-setting {
+  cursor: default;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.action-card.is-tool-setting:hover {
+  border-color: #94a3b8;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.action-badge.is-active {
+  background: #dcfce7;
+  color: #15803d;
 }
 
 .action-left {

@@ -59,13 +59,14 @@ window.CoreFloatingRobot = {
     }
   },
 
-  // 创建右键快捷微菜单
-  createContextMenu() {
-    const menu = window.CoreDOMUtils.createElement(
-      "div",
-      "core-robot-menu yishe-dock-menu",
-    );
-    menu.style.display = "none";
+  // 渲染微菜单项（动态根据当前状态更新文案）
+  renderMenuItems() {
+    if (!this.menuElement) return;
+    this.menuElement.innerHTML = "";
+
+    const isHoverEnabled = window.CoreLinkedImageUploader?.isEnabled
+      ? window.CoreLinkedImageUploader.isEnabled()
+      : true;
 
     const items = [
       {
@@ -82,6 +83,28 @@ window.CoreFloatingRobot = {
           } else {
             window.dispatchEvent(
               new CustomEvent("yishe:page-image-collector:open"),
+            );
+          }
+        },
+      },
+      {
+        icon: isHoverEnabled ? "🚫" : "⚡",
+        label: isHoverEnabled ? "停用图片悬浮保存" : "开启图片悬浮保存",
+        action: () => {
+          const next = !isHoverEnabled;
+          if (window.CoreLinkedImageUploader?.setEnabled) {
+            window.CoreLinkedImageUploader.setEnabled(next);
+          } else {
+            window.dispatchEvent(
+              new CustomEvent("yishe:image-hover:set-enabled", {
+                detail: { enabled: next },
+              }),
+            );
+          }
+          if (window.CoreDOMUtils?.showNotification) {
+            window.CoreDOMUtils.showNotification(
+              next ? "已开启图片悬浮快捷保存" : "已停用图片悬浮快捷保存",
+              next ? "success" : "info",
             );
           }
         },
@@ -106,20 +129,31 @@ window.CoreFloatingRobot = {
         this.closeMenu();
         item.action();
       });
-      menu.appendChild(el);
+      this.menuElement.appendChild(el);
     });
+  },
 
+  // 创建右键快捷微菜单
+  createContextMenu() {
+    const menu = window.CoreDOMUtils.createElement(
+      "div",
+      "core-robot-menu yishe-dock-menu",
+    );
+    menu.style.display = "none";
+    this.menuElement = menu;
+    this.renderMenuItems();
     return menu;
   },
 
   openMenu(x, y) {
     if (!this.menuElement) return;
+    this.renderMenuItems();
     this.isMenuOpen = true;
     this.menuElement.style.display = "block";
 
     // 智能定位防止超出屏幕
     const menuWidth = 180;
-    const menuHeight = 160;
+    const menuHeight = 200;
     const left = Math.min(x, window.innerWidth - menuWidth - 10);
     const top = Math.min(y, window.innerHeight - menuHeight - 10);
 

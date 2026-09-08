@@ -1,5 +1,6 @@
 dist/
+dist_old*
 node_modules/
 .output/
-.output_old*
+.output*
 .wxt/

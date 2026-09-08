@@ -1,14 +1,14 @@
 #yishe-linked-image-upload-root {
   position: fixed !important;
-  z-index: 2147483645 !important;
+  z-index: 2147483647 !important;
   display: none !important;
   width: auto !important;
-  height: 28px !important;
+  height: 22px !important;
   margin: 0 !important;
   padding: 0 !important;
   isolation: isolate !important;
   pointer-events: auto !important;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
   letter-spacing: 0 !important;
 }
 
@@ -20,50 +20,49 @@
   all: unset !important;
   box-sizing: border-box !important;
   display: inline-flex !important;
-  width: 92px !important;
-  height: 28px !important;
+  width: auto !important;
+  min-width: 44px !important;
+  height: 22px !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 4px !important;
+  gap: 3px !important;
   padding: 0 7px !important;
   border: 1px solid rgba(255, 255, 255, 0.22) !important;
-  border-radius: 6px !important;
+  border-radius: 11px !important;
   color: #ffffff !important;
-  background: rgba(17, 24, 39, 0.94) !important;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.24) !important;
-  backdrop-filter: blur(10px) saturate(130%) !important;
-  -webkit-backdrop-filter: blur(10px) saturate(130%) !important;
+  background: rgba(17, 24, 39, 0.78) !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2) !important;
+  backdrop-filter: blur(8px) saturate(130%) !important;
+  -webkit-backdrop-filter: blur(8px) saturate(130%) !important;
   cursor: pointer !important;
   user-select: none !important;
   white-space: nowrap !important;
   font-family: inherit !important;
-  font-size: 10px !important;
-  font-weight: 600 !important;
+  font-size: 10.5px !important;
+  font-weight: 500 !important;
   line-height: 1 !important;
   letter-spacing: 0 !important;
-  opacity: 1 !important;
-  transform: translateY(0) !important;
   transition:
-    background-color 0.16s ease,
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    transform 0.16s ease !important;
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease !important;
 }
 
 #yishe-linked-image-upload-root .yishe-linked-image-upload-button:hover {
-  background: rgba(3, 7, 18, 0.98) !important;
-  border-color: rgba(255, 255, 255, 0.34) !important;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.3) !important;
-  transform: translateY(-1px) !important;
+  background: rgba(3, 7, 18, 0.94) !important;
+  border-color: rgba(255, 255, 255, 0.38) !important;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.28) !important;
+  transform: translateY(-0.5px) scale(1.02) !important;
 }
 
 #yishe-linked-image-upload-root .yishe-linked-image-upload-button:active {
-  transform: translateY(0) scale(0.98) !important;
+  transform: translateY(0) scale(0.97) !important;
 }
 
 #yishe-linked-image-upload-root .yishe-linked-image-upload-button:focus-visible {
   outline: 2px solid #60a5fa !important;
-  outline-offset: 2px !important;
+  outline-offset: 1px !important;
 }
 
 #yishe-linked-image-upload-root .yishe-linked-image-upload-button:disabled {
@@ -73,16 +72,16 @@
 #yishe-linked-image-upload-root .yishe-linked-image-upload-icon {
   all: unset !important;
   display: inline-flex !important;
-  width: 14px !important;
-  height: 14px !important;
+  width: 12px !important;
+  height: 12px !important;
   align-items: center !important;
   justify-content: center !important;
-  flex: 0 0 14px !important;
+  flex: 0 0 12px !important;
   color: currentColor !important;
   font-family: inherit !important;
-  font-size: 16px !important;
+  font-size: 13px !important;
   font-weight: 700 !important;
-  line-height: 14px !important;
+  line-height: 12px !important;
 }
 
 #yishe-linked-image-upload-root .yishe-linked-image-upload-label {
@@ -92,14 +91,14 @@
   overflow: visible !important;
   color: currentColor !important;
   font-family: inherit !important;
-  font-size: 10px !important;
-  font-weight: 600 !important;
+  font-size: 10.5px !important;
+  font-weight: 500 !important;
   line-height: 1 !important;
   white-space: nowrap !important;
 }
 
 #yishe-linked-image-upload-root.is-uploading .yishe-linked-image-upload-icon {
-  border: 2px solid rgba(255, 255, 255, 0.35) !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.35) !important;
   border-top-color: #ffffff !important;
   border-radius: 50% !important;
   font-size: 0 !important;
@@ -107,7 +106,8 @@
 }
 
 #yishe-linked-image-upload-root.is-success .yishe-linked-image-upload-button {
-  background: rgba(21, 128, 61, 0.96) !important;
+  background: rgba(21, 128, 61, 0.94) !important;
+  border-color: rgba(74, 222, 128, 0.5) !important;
 }
 
 #yishe-linked-image-upload-root.is-success .yishe-linked-image-upload-icon {
@@ -116,11 +116,12 @@
 
 #yishe-linked-image-upload-root.is-success .yishe-linked-image-upload-icon::after {
   content: "✓" !important;
-  font-size: 14px !important;
+  font-size: 11px !important;
 }
 
 #yishe-linked-image-upload-root.is-error .yishe-linked-image-upload-button {
-  background: rgba(185, 28, 28, 0.96) !important;
+  background: rgba(185, 28, 28, 0.94) !important;
+  border-color: rgba(248, 113, 113, 0.5) !important;
 }
 
 #yishe-linked-image-upload-root.is-error .yishe-linked-image-upload-icon {
@@ -129,7 +130,7 @@
 
 #yishe-linked-image-upload-root.is-error .yishe-linked-image-upload-icon::after {
   content: "!" !important;
-  font-size: 14px !important;
+  font-size: 11px !important;
 }
 
 @keyframes yishe-linked-image-upload-spin {

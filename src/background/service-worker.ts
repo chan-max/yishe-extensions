@@ -2261,6 +2261,13 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") {
     return;
   }
+  if (Object.prototype.hasOwnProperty.call(changes, "imageHoverEnabled")) {
+    try {
+      chrome.contextMenus.update("toggle-image-hover-action", {
+        checked: changes.imageHoverEnabled.newValue !== false,
+      });
+    } catch (_) {}
+  }
   const tokenChanged = Object.prototype.hasOwnProperty.call(
     changes,
     AUTH_TOKEN_KEY,
@@ -2626,6 +2633,30 @@ function initContextMenus() {
       title: "YiShe 扩展功能",
       contexts: ["all"],
     });
+
+    // 0-1) 快捷开关: 图片悬浮保存
+    chrome.contextMenus.create(
+      {
+        id: "toggle-image-hover-action",
+        parentId: "yishe-extension-root",
+        title: "图片悬浮保存 (开/关)",
+        type: "checkbox",
+        checked: true,
+        contexts: ["all"],
+      },
+      () => {
+        if (chrome.runtime.lastError) return;
+        chrome.storage.local.get(["imageHoverEnabled"], (res) => {
+          if (res?.imageHoverEnabled === false) {
+            try {
+              chrome.contextMenus.update("toggle-image-hover-action", {
+                checked: false,
+              });
+            } catch (_) {}
+          }
+        });
+      },
+    );
 
     // --- 分组 1: 采集与收藏 ---
     chrome.contextMenus.create({
@@ -3681,6 +3712,31 @@ async function fetchImagePayloadForUpload(imageUrl) {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
     log("[ContextMenu] 右键菜单项被点击:", info.menuItemId);
+
+    // 0）切换图片悬浮保存开关
+    if (info.menuItemId === "toggle-image-hover-action") {
+      const next = Boolean(info.checked);
+      await chrome.storage.local.set({ imageHoverEnabled: next });
+      try {
+        const tabs = await chrome.tabs.query({});
+        for (const t of tabs) {
+          if (t.id) {
+            chrome.tabs
+              .sendMessage(t.id, {
+                action: "yishe:set-image-hover-enabled",
+                enabled: next,
+              })
+              .catch(() => {});
+          }
+        }
+      } catch (_) {}
+      showToast(
+        getTabId(tab),
+        "info",
+        next ? "已开启图片悬浮保存" : "已停用图片悬浮保存",
+      );
+      return;
+    }
 
     // 1）保存当前网站到 YiShe
     if (info.menuItemId === "save-current-website") {
