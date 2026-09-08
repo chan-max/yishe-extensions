@@ -57,6 +57,26 @@ async function handleOpenControlTab() {
   }
 }
 
+async function handleOpenSidePanel() {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = tabs[0];
+    const sidePanel = (chrome as any).sidePanel;
+    if (sidePanel && typeof sidePanel.open === "function") {
+      if (tab?.id) {
+        await sidePanel.open({ tabId: tab.id });
+      } else if (tab?.windowId) {
+        await sidePanel.open({ windowId: tab.windowId });
+      }
+      closeCurrentWindow();
+    } else {
+      ElMessage.warning("当前浏览器不支持原生侧边栏");
+    }
+  } catch (error: any) {
+    ElMessage.error(error?.message || "打开侧边栏失败");
+  }
+}
+
 async function handleLogout() {
   await logout();
 }
@@ -153,6 +173,13 @@ async function handleLogout() {
               <el-button
                 size="small"
                 type="primary"
+                class="popup-action"
+                @click="handleOpenSidePanel"
+              >
+                展开侧边栏
+              </el-button>
+              <el-button
+                size="small"
                 class="popup-action"
                 @click="handleOpenControlTab"
               >

@@ -1,133 +1,148 @@
-/* robot.css: 悬浮机器人样式 */
+/* robot.css: YiShe 悬浮胶囊与侧边栏唤起交互样式 */
 
-.core-robot-container {
+.core-robot-container.yishe-dock-container {
   position: fixed;
-  z-index: 999999;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  z-index: 2147483640;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  user-select: none;
+  touch-action: none;
+  cursor: grab;
 }
 
-.core-floating-robot {
-  width: 52px;
-  height: 52px;
-  background: #ffffff;
-  border-radius: 18px;
+.core-robot-container.is-dragging {
+  cursor: grabbing !important;
+}
+
+/* 悬浮主胶囊 */
+.core-floating-robot.yishe-dock-pill {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 28px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 9999px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12), 0 2px 4px rgba(15, 23, 42, 0.04);
+  padding: 5px 12px 5px 8px;
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  user-select: none;
-  border: 1px solid #d1d1d6;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.2s ease,
+              border-color 0.2s ease,
+              opacity 0.2s ease;
+  opacity: 0.88;
 }
 
-.core-floating-robot:hover {
-  transform: scale(1.05);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+.core-floating-robot.yishe-dock-pill:hover {
+  opacity: 1;
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.22), 0 2px 6px rgba(79, 70, 229, 0.08);
+  border-color: #c7d2fe;
 }
 
-.core-floating-robot:active {
+.core-floating-robot.yishe-dock-pill:active {
   transform: scale(0.96);
 }
 
-.core-robot-menu {
-  position: absolute;
-  bottom: 70px;
-  right: 0;
-  background: #ffffff;
-  border-radius: 18px;
-  border: 1px solid #e5e5ea;
-  box-shadow: 0 20px 40px rgba(28, 28, 30, 0.18);
-  min-width: 220px;
-  max-width: 320px;
-  max-height: 400px;
-  overflow-y: auto;
-  padding: 8px 0;
-  animation: slideUp 0.2s ease-out;
+.yishe-dock-inner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
-@keyframes slideUp {
+.yishe-dock-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+  flex-shrink: 0;
+}
+
+.yishe-dock-logo svg {
+  display: block;
+}
+
+.yishe-dock-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  letter-spacing: -0.1px;
+}
+
+.yishe-dock-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+  flex-shrink: 0;
+}
+
+/* 贴靠左右边缘的半隐处理 */
+.dock-right .yishe-dock-pill {
+  opacity: 0.72;
+}
+
+.dock-right .yishe-dock-pill:hover {
+  opacity: 1;
+}
+
+.dock-left .yishe-dock-pill {
+  opacity: 0.72;
+}
+
+.dock-left .yishe-dock-pill:hover {
+  opacity: 1;
+}
+
+/* 右键轻量快捷菜单 */
+.core-robot-menu.yishe-dock-menu {
+  position: fixed;
+  z-index: 2147483647;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16), 0 2px 6px rgba(15, 23, 42, 0.06);
+  min-width: 175px;
+  padding: 6px;
+  animation: yisheFadeIn 0.15s ease-out;
+}
+
+@keyframes yisheFadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: scale(0.95);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1);
   }
 }
 
 .core-menu-item {
-  padding: 12px 18px;
-  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 12px;
-  transition: background-color 0.2s ease;
-  font-size: 14px;
-  color: #1c1c1e;
-}
-
-.core-menu-item:hover:not(.disabled):not(.core-menu-header) {
-  background-color: #f2f2f7;
-}
-
-.core-menu-item.disabled {
-  color: #aeaeb2;
-  cursor: not-allowed;
-}
-
-.core-menu-item.core-menu-header {
-  font-weight: 600;
-  color: #3a3a3c;
-  cursor: default;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
   font-size: 13px;
-  text-transform: none;
-  letter-spacing: 0;
+  font-weight: 500;
+  color: #334155;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
-.core-menu-divider {
-  height: 1px;
-  background-color: #e5e5ea;
-  margin: 6px 0;
+.core-menu-item:hover {
+  background-color: #f1f5f9;
+  color: #4f46e5;
 }
 
 .core-menu-icon {
-  font-size: 16px;
-  width: 20px;
-  text-align: center;
+  font-size: 15px;
+  width: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-
-/* 滚动条样式 */
-.core-robot-menu::-webkit-scrollbar {
-  width: 6px;
-}
-
-.core-robot-menu::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 10px;
-}
-
-.core-robot-menu::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 10px;
-}
-
-.core-robot-menu::-webkit-scrollbar-thumb:hover {
-  background: #555;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .core-robot-container {
-    /* 移除固定 bottom/right，位置由 JS 计算 */
-  }
-
-  .core-robot-menu {
-    bottom: 70px;
-    right: 0;
-    min-width: 200px;
-  }
-}
-

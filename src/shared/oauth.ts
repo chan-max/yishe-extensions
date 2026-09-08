@@ -12,7 +12,7 @@
  */
 
 import { API_ENDPOINTS } from './api-config'
-import { storageGet, storageSet, storageRemove } from './extension'
+import { storageGet, storageSet, getExtensionUrl } from './extension'
 import { STORAGE_KEYS } from './api-utils'
 
 /** OAuth 客户端配置 */
@@ -46,7 +46,7 @@ function getAuthorizeBaseUrl(apiBaseUrl: string): string {
 /** 获取回调地址 */
 function getRedirectUri(): string {
   // 使用插件自身的回调页面
-  return browser.runtime.getURL(CALLBACK_PAGE)
+  return getExtensionUrl(CALLBACK_PAGE)
 }
 
 /** 生成授权 URL */
@@ -70,9 +70,9 @@ export async function openAuthorizePage(): Promise<void> {
   const apiBaseUrl = await getApiBaseUrl()
   const url = buildAuthorizeUrl(apiBaseUrl)
 
-  // Chrome 插件打开新标签页
-  if (browser.tabs?.create) {
-    await browser.tabs.create({ url })
+  const tabsApi = typeof chrome !== 'undefined' && chrome.tabs ? chrome.tabs : (typeof browser !== 'undefined' ? browser.tabs : null)
+  if (tabsApi?.create) {
+    tabsApi.create({ url })
   } else {
     window.open(url, '_blank')
   }

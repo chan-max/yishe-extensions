@@ -256,6 +256,7 @@ async function login(username: string, password: string, rememberMe = false) {
     body: JSON.stringify({
       username,
       password,
+      terminalType: "extension",
       deviceInfo: getDeviceInfo(),
       rememberMe,
     }),

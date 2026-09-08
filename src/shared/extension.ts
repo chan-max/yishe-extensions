@@ -50,6 +50,18 @@ export async function storageSet(values: Record<string, unknown>) {
   });
 }
 
+export async function storageRemove(keys: string | string[]) {
+  await new Promise<void>((resolve, reject) => {
+    extensionApi.storage.local.remove(keys, () => {
+      if (extensionApi.runtime.lastError) {
+        reject(new Error(extensionApi.runtime.lastError.message));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
 export async function sendRuntimeMessage<T = unknown>(message: unknown) {
   return await new Promise<T>((resolve, reject) => {
     extensionApi.runtime.sendMessage(message, (response) => {

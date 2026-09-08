@@ -70,7 +70,11 @@
         }
 
         // 通知 background script 处理
-        const response = await browser.runtime.sendMessage({
+        const runtime = typeof chrome !== 'undefined' && chrome.runtime ? chrome.runtime : (typeof browser !== 'undefined' ? browser.runtime : null)
+        if (!runtime) {
+          throw new Error('未找到扩展运行时环境')
+        }
+        const response = await runtime.sendMessage({
           action: 'oauthCallback',
           code: code,
           redirectUri: window.location.origin + window.location.pathname

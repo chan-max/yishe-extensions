@@ -32,7 +32,11 @@ export default defineConfig({
       "contextMenus",
       "downloads",
       "cookies",
+      "sidePanel",
     ],
+    side_panel: {
+      default_path: "sidepanel.html",
+    },
     host_permissions: ["http://*/*", "https://*/*"],
     action: {
       default_title: "YiShe 工具集",

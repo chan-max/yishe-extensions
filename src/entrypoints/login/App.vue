@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { Lock, User } from "@element-plus/icons-vue";
+import { Link, Lock, User } from "@element-plus/icons-vue";
 
 import { useDevMode } from "@/composables/useDevMode";
 import { ApiUtils } from "@/shared/api-utils";
 import { navigateToExtensionPage } from "@/shared/extension";
+import { openAuthorizePage } from "@/shared/oauth";
 
 const form = reactive({
   username: "",
@@ -48,6 +49,14 @@ async function handleSubmit() {
     errorMessage.value = error instanceof Error ? error.message : "登录失败";
   } finally {
     submitting.value = false;
+  }
+}
+
+async function handleOAuthLogin() {
+  try {
+    await openAuthorizePage();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "打开授权页面失败");
   }
 }
 
@@ -133,6 +142,19 @@ async function handleDevModeChange(nextValue: boolean | string | number) {
             @click="handleSubmit"
           >
             登录
+          </el-button>
+
+          <div class="login-divider">
+            <span>或</span>
+          </div>
+
+          <el-button
+            class="oauth-submit"
+            plain
+            :icon="Link"
+            @click="handleOAuthLogin"
+          >
+            已登录网页一键授权
           </el-button>
         </el-form>
       </section>
@@ -234,6 +256,30 @@ async function handleDevModeChange(nextValue: boolean | string | number) {
 }
 
 .login-submit {
+  width: 100%;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  margin: 12px 0;
+  text-align: center;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.login-divider span {
+  padding: 0 10px;
+  color: var(--app-muted-color, #94a3b8);
+  font-size: 11px;
+}
+
+.oauth-submit {
   width: 100%;
 }
 

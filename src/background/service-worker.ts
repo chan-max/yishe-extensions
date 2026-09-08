@@ -2338,7 +2338,39 @@ try {
 // 八、扩展内部消息分发（popup / content scripts -> background）
 // =============================================================
 
+// 启用点击扩展图标直接唤起原生 Side Panel
+try {
+  const sidePanelApi = (chrome as any).sidePanel;
+  if (sidePanelApi?.setPanelBehavior) {
+    sidePanelApi.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  }
+} catch (_) {}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request?.action === "openSidePanel") {
+    const tabId = sender?.tab?.id;
+    const windowId = sender?.tab?.windowId;
+    const sidePanelApi = (chrome as any).sidePanel;
+    if (sidePanelApi && typeof sidePanelApi.open === "function") {
+      const openPromise = tabId
+        ? sidePanelApi.open({ tabId }).catch(() => {
+            if (windowId) return sidePanelApi.open({ windowId });
+          })
+        : windowId
+          ? sidePanelApi.open({ windowId })
+          : Promise.reject(new Error("无有效 tab 或 window"));
+
+      openPromise
+        .then(() => sendResponse({ success: true }))
+        .catch((err: any) =>
+          sendResponse({ success: false, error: err?.message || String(err) }),
+        );
+      return true;
+    }
+    sendResponse({ success: false, error: "SidePanel API 不可用" });
+    return true;
+  }
+
   if (request?.type === "control/feature-execute") {
     handleControlFeatureExecute(request)
       .then((result) => sendResponse(result))
